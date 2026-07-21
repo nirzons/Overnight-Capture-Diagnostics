@@ -1,6 +1,7 @@
 {
   "Name": "Overnight Capture Diagnostics",
   "Identifier": "8f9c1e2d-3a4b-5c6d-7e8f-9a0b1c2d3e4f",
+  "Icon": "logo.png",
   "Author": "Nir Zonshine",
   "License": "MIT",
   "LicenseURL": "https://opensource.org/licenses/MIT",
