@@ -21,9 +21,9 @@ using System.Runtime.InteropServices;
 // Additional Plugin Metadata
 [assembly: AssemblyMetadata("License", "MIT")]
 [assembly: AssemblyMetadata("LicenseURL", "https://opensource.org/licenses/MIT")]
-[assembly: AssemblyMetadata("Repository", "https://github.com/nirzons/OvernightCaptureDiagnostics")]
-[assembly: AssemblyMetadata("Homepage", "https://github.com/nirzons/OvernightCaptureDiagnostics")]
-[assembly: AssemblyMetadata("ChangelogURL", "https://github.com/nirzons/OvernightCaptureDiagnostics/blob/main/CHANGELOG.md")]
+[assembly: AssemblyMetadata("Repository", "https://github.com/nirzons/Overnight-Capture-Diagnostics")]
+[assembly: AssemblyMetadata("Homepage", "https://github.com/nirzons/Overnight-Capture-Diagnostics")]
+[assembly: AssemblyMetadata("ChangelogURL", "https://github.com/nirzons/Overnight-Capture-Diagnostics/blob/main/CHANGELOG.md")]
 
 [assembly: ComVisible(false)]
 [assembly: AssemblyConfiguration("")]
