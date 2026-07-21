@@ -1,0 +1,52 @@
+name: Build and Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Plugin (Release)
+        run: dotnet build -c Release --no-restore
+
+      - name: Create Release Package (Zip)
+        shell: powershell
+        run: |
+          $Version = "${{ github.ref_name }}"
+          if ($Version -like "*v*") {
+              $ZipName = "Overnight-Capture-Diagnostics-$Version.zip"
+          } else {
+              $ZipName = "Overnight-Capture-Diagnostics-latest.zip"
+          }
+          $Path = "bin\Release\net8.0-windows"
+          Compress-Archive -Path "$Path\NirZonshine.NINA.OvernightCaptureDiagnostics.dll", "$Path\NirZonshine.NINA.OvernightCaptureDiagnostics.pdb", "$Path\NirZonshine.NINA.OvernightCaptureDiagnostics.deps.json", "$Path\NirZonshine.NINA.OvernightCaptureDiagnostics.runtimeconfig.json", "$Path\manifest.json" -DestinationPath "$ZipName" -Force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Overnight-Capture-Diagnostics-*.zip
+          name: Overnight Capture Diagnostics ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
