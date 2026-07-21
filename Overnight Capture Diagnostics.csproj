@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>NirZonshine.NINA.OvernightCaptureDiagnostics</RootNamespace>
+    <AssemblyName>NirZonshine.NINA.OvernightCaptureDiagnostics</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Version>1.0.0.0</Version>
+    <UseWPF>true</UseWPF>
+    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <CodePage>65001</CodePage>
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NINA.Plugin" Version="3.0.0.2017-beta" />
+    <PackageReference Include="NINA.WPF.Base" Version="3.0.0.2017-beta" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="manifest.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="if not exist &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; ( mkdir &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; )&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.dll&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.pdb&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.deps.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.runtimeconfig.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(ProjectDir)manifest.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;" />
+  </Target>
+</Project>

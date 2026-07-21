@@ -1,0 +1,38 @@
+<ResourceDictionary
+    x:Class="NirZonshine.NINA.OvernightCaptureDiagnostics.Options"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:nina="clr-namespace:NINA.View.Sequencer;assembly=NINA.Sequencer"
+    xmlns:local="clr-namespace:NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer">
+
+    <!-- Plugin Options Tab DataTemplate -->
+    <DataTemplate x:Key="Overnight Capture Diagnostics_Options">
+        <StackPanel Orientation="Vertical" Margin="10">
+            <TextBlock Text="Overnight Capture Diagnostics (OCD)" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource MahApps.Brushes.Accent}" Margin="0,0,0,10" />
+            <TextBlock Text="Overnight Capture Diagnostics automatically parses N.I.N.A log telemetry and generates visual Markdown and dark-mode HTML diagnostic reports upon sequence completion." Foreground="#94A3B8" TextWrapping="Wrap" FontSize="13" />
+        </StackPanel>
+    </DataTemplate>
+
+    <!-- Sequencer Instruction Block DataTemplate -->
+    <DataTemplate DataType="{x:Type local:OCDSequenceItem}">
+        <nina:SequenceBlockView>
+
+            <nina:SequenceBlockView.SequenceItemContent>
+                <StackPanel Orientation="Vertical" Margin="5">
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                        <TextBlock Text="Session Date (YYYY-MM-DD):" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold" Foreground="#E2E8F0" />
+                        <TextBox Text="{Binding TargetSessionDate, UpdateSourceTrigger=PropertyChanged}" Width="160" Height="24" VerticalContentAlignment="Center" Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#475569" ToolTip="Leave empty to analyze the latest session (spanning midnight). Or enter a past date (e.g. 2026-07-19) to analyze a specific past session!" />
+                    </WrapPanel>
+                </StackPanel>
+            </nina:SequenceBlockView.SequenceItemContent>
+
+            <nina:SequenceBlockView.SequenceItemProgressContent>
+                <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBlock Text="Status" HorizontalAlignment="Right" Opacity="0.6" FontSize="10" Foreground="#94A3B8" />
+                    <TextBlock Text="{Binding CurrentReadout}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="13" Foreground="#10B981" />
+                </StackPanel>
+            </nina:SequenceBlockView.SequenceItemProgressContent>
+
+        </nina:SequenceBlockView>
+    </DataTemplate>
+</ResourceDictionary>

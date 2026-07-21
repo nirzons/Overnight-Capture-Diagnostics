@@ -1,0 +1,12 @@
+# Visual Studio & .NET Build Output
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local temp & logs
+*.log
+gemini_share.txt
+Files from other PC/
