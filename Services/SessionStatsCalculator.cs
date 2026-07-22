@@ -101,6 +101,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             target.BadStarCount = 0;
             target.BadRmsCount = 0;
             target.ExplicitRejectedCount = 0;
+            target.Anomalies.Clear();
 
             foreach (var f in lights) {
                 bool isBad = false;

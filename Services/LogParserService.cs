@@ -544,6 +544,28 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             // Ingestion of Guiding telemetry
             IngestPhd2GuidingData(sessionData, allLogFiles, allFrames);
 
+            // Isolate active nightly session: if light frames exist, anchor session end to the end of sequence / imaging activity
+            var activeLightFrames = allFrames.Where(f => !f.IsCalibrationFrame).OrderBy(f => f.Timestamp).ToList();
+            if (activeLightFrames.Any()) {
+                DateTime lastLightTime = activeLightFrames.Last().Timestamp;
+                // Allow a 45-minute window after the last light frame for sequence completion / flat frames / parking
+                DateTime sessionCutoff = lastLightTime.AddMinutes(45);
+
+                // Filter out daytime / post-session simulator test runs or app restarts
+                allFrames = allFrames.Where(f => f.Timestamp <= sessionCutoff).ToList();
+                allPolar = allPolar.Where(p => p.Timestamp <= sessionCutoff).ToList();
+                allAutofocus = allAutofocus.Where(a => a.Timestamp <= sessionCutoff).ToList();
+                allFlips = allFlips.Where(m => m.Timestamp <= sessionCutoff).ToList();
+                rawProfiles = rawProfiles.Where(p => p.StartTime <= sessionCutoff).ToList();
+
+                // Recalculate true session end time bounded to active nightly imaging activity
+                DateTime trueSessionEnd = allFrames.Any() ? allFrames.Max(f => f.Timestamp) : lastLightTime;
+                if (allFlips.Any()) trueSessionEnd = new DateTime(Math.Max(trueSessionEnd.Ticks, allFlips.Max(m => m.Timestamp).Ticks));
+                if (allAutofocus.Any()) trueSessionEnd = new DateTime(Math.Max(trueSessionEnd.Ticks, allAutofocus.Max(a => a.Timestamp).Ticks));
+
+                sessionData.SessionEnd = trueSessionEnd;
+            }
+
             // Filter sub-sessions to ONLY keep those with actual data (frames, polar alignments, AF, or flips)
             var activeProfiles = new List<EquipmentProfileRecord>();
             int subIndex = 1;

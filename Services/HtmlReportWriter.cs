@@ -207,10 +207,47 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
 
                 if (target.Anomalies.Any()) {
-                    sb.AppendLine("      <h3>🚨 Detected Target Anomalies & Sub-frame Warnings</h3>");
-                    foreach (var a in target.Anomalies.Take(15)) {
-                        string cssClass = a.Severity == AnomalySeverity.Critical ? "anomaly-card anomaly-critical" : "anomaly-card";
-                        sb.AppendLine($"      <div class=\"{cssClass}\"><strong>{a.Timestamp:HH:mm:ss} — {a.Category}:</strong> {a.Description}</div>");
+                    sb.AppendLine("      <h3>🚨 Detected Target Anomalies &amp; Sub-frame Warnings</h3>");
+
+                    var reasonOrder = new[] { "Guiding RMS Spike", "Star Count Drop", "HFR Spike", "Explicitly Rejected" };
+                    var icons = new System.Collections.Generic.Dictionary<string, string> {
+                        { "Guiding RMS Spike",   "🌬️ Guiding RMS Spikes" },
+                        { "Star Count Drop",     "☁️ Star Count Drops" },
+                        { "HFR Spike",           "🔴 HFR Spikes" },
+                        { "Explicitly Rejected", "❌ Explicitly Rejected" },
+                        { "Other",               "⚠️ Other Anomalies" }
+                    };
+
+                    var groups = target.Anomalies
+                        .GroupBy(a => {
+                            foreach (var key in reasonOrder)
+                                if (a.Description.Contains(key, StringComparison.OrdinalIgnoreCase)) return key;
+                            return "Other";
+                        })
+                        .OrderBy(g => {
+                            int idx = System.Array.IndexOf(reasonOrder, g.Key);
+                            return idx < 0 ? reasonOrder.Length : idx;
+                        });
+
+                    bool hasCritical = target.Anomalies.Any(a => a.Severity == AnomalySeverity.Critical);
+
+                    foreach (var grp in groups) {
+                        string label = icons.TryGetValue(grp.Key, out var l) ? l : $"⚠️ {grp.Key}";
+                        string cssClass = hasCritical ? "anomaly-card anomaly-critical" : "anomaly-card";
+                        var entries = grp.OrderBy(a => a.Timestamp).ToList();
+                        sb.AppendLine($"      <div class=\"{cssClass}\">");
+                        sb.AppendLine($"        <strong>{label}</strong> &mdash; {entries.Count} frame(s):");
+                        sb.AppendLine("        <ul style=\"margin: 6px 0 0 16px; padding: 0;\">");
+                        foreach (var a in entries) {
+                            string brief = a.Description
+                                .Replace("Frame flagged as sub-optimal: ", "")
+                                .Replace(a.Category + ": ", "");
+                            var parts = brief.Split(';');
+                            string match = parts.FirstOrDefault(p => p.Contains(grp.Key, StringComparison.OrdinalIgnoreCase))?.Trim() ?? brief.Trim();
+                            sb.AppendLine($"          <li><code>{a.Timestamp:HH:mm}</code> &mdash; {match}</li>");
+                        }
+                        sb.AppendLine("        </ul>");
+                        sb.AppendLine("      </div>");
                     }
                 }
                 sb.AppendLine("    </div>");
