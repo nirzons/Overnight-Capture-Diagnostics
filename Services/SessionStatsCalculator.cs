@@ -130,7 +130,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
 
                 if (f.GuideTotalRms > 0 && target.GuideRmsMedian > 0) {
-                    double rmsArcsec = f.GuideTotalRms * pixelScaleArcsec;
+                    double rmsArcsec = f.GuideTotalRms;
                     if (rmsArcsec > target.GuideRmsMedian + (2.5 * target.GuideRmsStdDev) || rmsArcsec > 1.50) {
                         isBad = true;
                         reasons.Add($"Guiding RMS Spike ({rmsArcsec:F2}\" vs Median {target.GuideRmsMedian:F2}\")");
@@ -177,7 +177,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     var preStars = preFrames.Where(f => f.StarCount > 0).Select(f => (double)f.StarCount).ToList();
                     if (preStars.Any()) flip.PreFlipStarCount = preStars.Average();
 
-                    var preRms = preFrames.Where(f => f.GuideTotalRms > 0).Select(f => f.GuideTotalRms * pixelScaleArcsec).ToList();
+                    var preRms = preFrames.Where(f => f.GuideTotalRms > 0).Select(f => f.GuideTotalRms).ToList();
                     if (preRms.Any()) flip.PreFlipRms = preRms.Average();
                 }
 
@@ -188,7 +188,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     var postStars = postFrames.Where(f => f.StarCount > 0).Select(f => (double)f.StarCount).ToList();
                     if (postStars.Any()) flip.PostFlipStarCount = postStars.Average();
 
-                    var postRms = postFrames.Where(f => f.GuideTotalRms > 0).Select(f => f.GuideTotalRms * pixelScaleArcsec).ToList();
+                    var postRms = postFrames.Where(f => f.GuideTotalRms > 0).Select(f => f.GuideTotalRms).ToList();
                     if (postRms.Any()) flip.PostFlipRms = postRms.Average();
                 }
             }
