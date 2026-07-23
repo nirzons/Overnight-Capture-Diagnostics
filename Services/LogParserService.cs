@@ -115,10 +115,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             @"Platesolving with parameters:\s*FocalLength:\s*(?<FocalLength>[\d\.,]+)\s*PixelSize:\s*(?<PixelSize>[\d\.,]+)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token) {
+        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token, string? overrideLogDir = null) {
             var sessionData = new SessionData();
 
             var logDirectories = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(overrideLogDir) && Directory.Exists(overrideLogDir)) {
+                logDirectories.Add(overrideLogDir);
+            }
 
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             string ninaLogsDir = Path.Combine(localAppData, "NINA", "Logs");
@@ -129,7 +133,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             var allLogFiles = new List<FileInfo>();
             foreach (var dir in logDirectories) {
                 try {
-                    allLogFiles.AddRange(new DirectoryInfo(dir).GetFiles("*.log"));
+                    var dInfo = new DirectoryInfo(dir);
+                    allLogFiles.AddRange(dInfo.GetFiles("*.log"));
+                    allLogFiles.AddRange(dInfo.GetFiles("*.log.txt"));
+                    allLogFiles.AddRange(dInfo.GetFiles("*.txt").Where(f => Regex.IsMatch(f.Name, @"^\d{8}-\d{6}")));
                 } catch { }
             }
 
@@ -311,10 +318,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             seenFrameKeys.Add(filename);
 
-                            string pathTarget = ExtractTargetFromPath(fullPath);
-                            string frameTarget = !string.IsNullOrWhiteSpace(pathTarget) ? pathTarget : currentTarget;
+                            ParseNinaFilenameTelemetry(filename, out double expSecs, out double hfr, out int stars, out string parsedFilter, out double parsedRms, out string inlineTarget);
 
-                            ParseNinaFilenameTelemetry(filename, out double expSecs, out double hfr, out int stars, out string parsedFilter, out double parsedRms);
+                            string pathTarget = ExtractTargetFromPath(fullPath);
+                            string frameTarget = !string.IsNullOrWhiteSpace(currentTarget) && !currentTarget.Equals("Default Session Target", StringComparison.OrdinalIgnoreCase)
+                                ? currentTarget
+                                : (!string.IsNullOrWhiteSpace(inlineTarget) ? inlineTarget : (!string.IsNullOrWhiteSpace(pathTarget) ? pathTarget : currentTarget));
+
+                            if (!string.IsNullOrWhiteSpace(parsedFilter) && (parsedFilter.Equals(frameTarget, StringComparison.OrdinalIgnoreCase) || parsedFilter.StartsWith("LDN") || parsedFilter.StartsWith("IC") || parsedFilter.StartsWith("NGC"))) {
+                                parsedFilter = string.Empty;
+                            }
 
                             string frameFilter = !string.IsNullOrWhiteSpace(parsedFilter) ? parsedFilter : currentFilter;
 
@@ -678,7 +691,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     parent.Equals("BIAS", StringComparison.OrdinalIgnoreCase)) {
                     string targetDir = Path.GetDirectoryName(dir) ?? "";
                     string targetName = Path.GetFileName(targetDir);
-                    if (!string.IsNullOrWhiteSpace(targetName) && !targetName.Equals("N.I.N.A", StringComparison.OrdinalIgnoreCase)) {
+                    if (!string.IsNullOrWhiteSpace(targetName) && 
+                        !targetName.Equals("N.I.N.A", StringComparison.OrdinalIgnoreCase) &&
+                        !Regex.IsMatch(targetName, @"^\d{4}[-_]\d{2}[-_]\d{2}$")) {
                         return targetName;
                     }
                 }
@@ -686,19 +701,33 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             return string.Empty;
         }
 
-        private static void ParseNinaFilenameTelemetry(string filename, out double expSecs, out double hfr, out int stars, out string filter, out double rms) {
+        private static void ParseNinaFilenameTelemetry(string filename, out double expSecs, out double hfr, out int stars, out string filter, out double rms, out string inlineTarget) {
             expSecs = 0;
             hfr = 0;
             stars = 0;
             filter = string.Empty;
             rms = 0;
+            inlineTarget = string.Empty;
 
             string nameWithoutExt = Path.GetFileNameWithoutExtension(filename);
             string[] tokens = nameWithoutExt.Split('_');
 
-            foreach (var token in tokens) {
-                string t = token.Trim();
+            var knownFilters = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+                "Ha", "H-Alpha", "Halpha", "OIII", "O3", "SII", "S2", "L", "Lum", "Luminance",
+                "R", "Red", "G", "Green", "B", "Blue", "DUAL", "DualBand", "IRUV", "UVIR", "CLS",
+                "Dark", "Flat", "Bias"
+            };
+
+            var numericTokens = new List<(string tStr, double val, int idx)>();
+
+            for (int i = 0; i < tokens.Length; i++) {
+                string t = tokens[i].Trim();
                 if (string.IsNullOrEmpty(t)) continue;
+
+                // Date / Time token (e.g. 2026-07-22 or 21-44-31)
+                if (Regex.IsMatch(t, @"^\d{4}-\d{2}-\d{2}$") || Regex.IsMatch(t, @"^\d{2}-\d{2}-\d{2}$")) {
+                    continue;
+                }
 
                 // Exposure: e.g. 180.00s or 180s
                 if (t.EndsWith("s", StringComparison.OrdinalIgnoreCase) &&
@@ -716,7 +745,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     }
                 }
 
-                // Stars: e.g. 193STARS or 193
+                // Stars: e.g. 193STARS
                 if (t.EndsWith("STARS", StringComparison.OrdinalIgnoreCase)) {
                     string starNum = t.Substring(0, t.Length - 5);
                     if (int.TryParse(starNum, NumberStyles.Any, CultureInfo.InvariantCulture, out int starVal)) {
@@ -725,7 +754,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     }
                 }
 
-                // RMS: e.g. RMS0.24 or RMS_0.24
+                // RMS: e.g. RMS0.24
                 if (t.StartsWith("RMS", StringComparison.OrdinalIgnoreCase)) {
                     string rmsNum = t.Substring(3).TrimStart('_').Replace(',', '.');
                     if (double.TryParse(rmsNum, NumberStyles.Any, CultureInfo.InvariantCulture, out double rmsVal)) {
@@ -734,17 +763,51 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     }
                 }
 
-                // Filter Token: e.g. IRUV, Ha, OIII, SII, L3, L2, L1, CLS, RGB, DualBand
-                if (string.IsNullOrEmpty(filter) &&
-                    !t.Equals("LIGHT", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Equals("DARK", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Equals("FLAT", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Equals("BIAS", StringComparison.OrdinalIgnoreCase) &&
-                    !t.StartsWith("GAIN", StringComparison.OrdinalIgnoreCase) &&
-                    !t.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase) &&
-                    !t.StartsWith("RMS", StringComparison.OrdinalIgnoreCase) &&
-                    !t.Contains("-") && t.Length <= 10 && !t.All(char.IsDigit)) {
-                    filter = t;
+                // Filter matching
+                if (knownFilters.Contains(t) || (t.Length <= 5 && (t.EndsWith("a") || t.Equals("L3") || t.Equals("L2") || t.Equals("L1")))) {
+                    if (string.IsNullOrEmpty(filter)) filter = t;
+                    continue;
+                }
+
+                // Target Name in filename (e.g. "LDN 1235" or "IC 5146" or "M31")
+                if (t.Contains(" ") || t.StartsWith("LDN") || t.StartsWith("IC") || t.StartsWith("NGC") || (t.StartsWith("M") && t.Length > 2 && char.IsDigit(t[1]))) {
+                    if (!t.Equals("LIGHT", StringComparison.OrdinalIgnoreCase) && !t.Equals("DARK", StringComparison.OrdinalIgnoreCase)) {
+                        inlineTarget = t;
+                        continue;
+                    }
+                }
+
+                // Collect un-prefixed numeric tokens for positional fallback
+                if (double.TryParse(t.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal)) {
+                    numericTokens.Add((t, dVal, i));
+                }
+            }
+
+            // Fallback for un-prefixed numeric tokens (e.g. N.I.N.A default tags without explicit prefixes)
+            if (stars == 0 || hfr == 0 || rms == 0) {
+                foreach (var item in numericTokens) {
+                    // Frame Index (4-digit int, e.g. 0000, 0001) right after exposure
+                    if (item.tStr.Length == 4 && item.val < 2000 && item.val >= 0 && stars == 0 && hfr == 0) {
+                        continue;
+                    }
+
+                    // Star Count (integer >= 10, typically 20 to 5000)
+                    if (stars == 0 && item.val >= 10 && item.val == Math.Floor(item.val)) {
+                        stars = (int)item.val;
+                        continue;
+                    }
+
+                    // HFR (float typically between 0.8 and 20.0)
+                    if (hfr == 0 && item.val >= 0.5 && item.val <= 25.0) {
+                        hfr = item.val;
+                        continue;
+                    }
+
+                    // RMS (small float at the end of token list, e.g. 0.05 to 5.0)
+                    if (rms == 0 && item.val > 0 && item.val <= 5.0 && item.idx == numericTokens.Last().idx) {
+                        rms = item.val;
+                        continue;
+                    }
                 }
             }
         }
