@@ -272,7 +272,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         var mTarget = RegexTargetStart.Match(line);
                         if (mTarget.Success) {
                             string tName = mTarget.Groups["TargetName"].Value.Trim();
-                            if (!string.IsNullOrWhiteSpace(tName) && !tName.StartsWith("*")) {
+                            if (!string.IsNullOrWhiteSpace(tName) && !tName.StartsWith("*") && !tName.Contains("rotator", StringComparison.OrdinalIgnoreCase) && !tName.Contains("Moving")) {
                                 currentTarget = tName;
                             }
                             continue;
@@ -318,7 +318,23 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             seenFrameKeys.Add(filename);
 
-                            ParseNinaFilenameTelemetry(filename, out double expSecs, out double hfr, out int stars, out string parsedFilter, out double parsedRms, out string inlineTarget);
+                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk();
+                            var dynamicTelem = NinaFilePatternParserService.ParsePathWithPattern(fullPath, ninaPattern);
+
+                            double expSecs, hfr, parsedRms;
+                            int stars;
+                            string parsedFilter, inlineTarget;
+
+                            if (dynamicTelem.IsSuccess && (dynamicTelem.HFR > 0 || dynamicTelem.StarCount > 0)) {
+                                expSecs = dynamicTelem.ExposureSeconds;
+                                hfr = dynamicTelem.HFR;
+                                stars = dynamicTelem.StarCount;
+                                parsedFilter = dynamicTelem.Filter;
+                                parsedRms = dynamicTelem.RMS;
+                                inlineTarget = dynamicTelem.TargetName;
+                            } else {
+                                ParseNinaFilenameTelemetry(filename, out expSecs, out hfr, out stars, out parsedFilter, out parsedRms, out inlineTarget);
+                            }
 
                             string pathTarget = ExtractTargetFromPath(fullPath);
                             string frameTarget = !string.IsNullOrWhiteSpace(currentTarget) && !currentTarget.Equals("Default Session Target", StringComparison.OrdinalIgnoreCase)

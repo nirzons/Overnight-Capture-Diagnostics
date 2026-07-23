@@ -69,6 +69,39 @@ If you need to install the plugin manually from a custom compiled build or on an
 
 ---
 
+## ⚙️ N.I.N.A. File Pattern Configuration & Recommendations
+
+To compile complete per-frame health diagnostics (such as **HFR**, **Star Count**, and **Guiding RMS**), OCD dynamically analyzes the **Image File Pattern** configured in N.I.N.A. (`Options` ➔ `Imaging` ➔ `File Settings` ➔ `Image File Pattern`).
+
+> **Important:** Sub-frame telemetry tags must be included in your N.I.N.A. File Save Pattern so that OCD can extract per-frame HFR, star counts, and RMS from saved image file paths without needing to scan raw image files on disk.
+
+### Recommended File Pattern Examples
+
+You can copy and paste any of the following 3 recommended patterns directly into N.I.N.A. (**Options** ➔ **Imaging** ➔ **File Settings** ➔ **Image File Pattern**):
+
+#### 🌟 Pattern 1: Comprehensive Diagnostics Pattern (Recommended)
+```
+$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_$$EXPOSURETIME$$s_GAIN$$GAIN$$_TEMP$$SENSORTEMP$$_HFR$$HFR$$_$$STARCOUNT$$STARS_RMS$$RMS$$_$$FRAMENR$$
+```
+*Example Output Filepath:*  
+`LDN 1235\LIGHT\2026-07-22_21-25-49_Ha_300.00s_GAIN100_TEMP-4.90_HFR2.17_193STARS_RMS0.24_0000.fits`
+
+#### ⚡ Pattern 2: Compact Standard Pattern
+```
+$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_-$$SENSORTEMP$$C_$$EXPOSURETIME$$s_$$STARCOUNT$$STARS_$$HFR$$HFR_$$RMS$$RMS_$$FRAMENR$$
+```
+*Example Output Filepath:*  
+`IC 5146\LIGHT\2026-07-22_21-44-31_Ha_-4.90C_300.00s_837STARS_1.65HFR_0.47RMS_0000.fits`
+
+#### 🛠️ Pattern 3: Minimal Un-prefixed Pattern
+```
+$$DATETIME$$_$$FILTER$$_$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$HFR$$_$$TARGETNAME$$_$$RMS$$
+```
+*Example Output Filepath:*  
+`2026-07-22_21-25-49_Ha_-4.90_300.00s_0000_874_16.21_LDN 1235_0.12.fits`
+
+---
+
 ## 📊 Sample Diagnostic Report Highlights
 
 ### Equipment & Optical Profile
