@@ -14,6 +14,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public List<MeridianFlipRecord> MeridianFlips { get; set; } = new List<MeridianFlipRecord>();
         public List<AnomalyRecord> Anomalies { get; set; } = new List<AnomalyRecord>();
 
+        public string TargetCoordinates { get; set; } = string.Empty; // e.g. RA: 21:48:51, Dec: 47° 21' 58"
+        public string RotatorAngle { get; set; } = string.Empty; // e.g. 17.89°
+
         // HFR Statistics
         public double HfrMin { get; set; }
         public double HfrMax { get; set; }

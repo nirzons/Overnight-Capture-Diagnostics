@@ -133,14 +133,17 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             get => currentReadout;
             set {
                 currentReadout = value;
-                RaisePropertyChanged(nameof(CurrentReadout));
-
-                if (!string.IsNullOrEmpty(value) && value != "--") {
-                    Name = $"OCD Report ({value})";
+                if (System.Windows.Application.Current != null && System.Windows.Application.Current.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess()) {
+                    System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
+                        RaisePropertyChanged(nameof(CurrentReadout));
+                        Name = (!string.IsNullOrEmpty(value) && value != "--") ? $"OCD Report ({value})" : "Overnight Capture Diagnostics (OCD)";
+                        RaisePropertyChanged(nameof(Name));
+                    });
                 } else {
-                    Name = "Overnight Capture Diagnostics (OCD)";
+                    RaisePropertyChanged(nameof(CurrentReadout));
+                    Name = (!string.IsNullOrEmpty(value) && value != "--") ? $"OCD Report ({value})" : "Overnight Capture Diagnostics (OCD)";
+                    RaisePropertyChanged(nameof(Name));
                 }
-                RaisePropertyChanged(nameof(Name));
             }
         }
 

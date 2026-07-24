@@ -29,7 +29,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
             sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.1 ({analysisType})");
-            sb.AppendLine($"> **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
+            sb.AppendLine($"> **Plugin Version:** v1.0.1 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
             sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr}");
             sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine();
@@ -97,13 +97,25 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             sb.AppendLine("---");
             sb.AppendLine();
+            double storageGb = session.TotalStorageBytes / (1024.0 * 1024.0 * 1024.0);
             sb.AppendLine("## ⏱️ Capture & Overhead Breakdown");
             sb.AppendLine($"- **Session Execution Window:** {startStr} — {endStr} (Total Elapsed: {elapsedStr})");
             sb.AppendLine($"- **First Light Frame Captured:** {firstLightStr}");
             sb.AppendLine($"- **Last Light Frame Captured:** {lastLightStr}");
             sb.AppendLine($"- **Total Night Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine($"- **Total Overhead Time:** {FormatTimeSpan(TimeSpan.FromSeconds(session.TotalOverheadSeconds))}");
+            sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
             sb.AppendLine();
+
+            if (session.HardwareErrors.Any()) {
+                sb.AppendLine("### ⚠️ Hardware Disconnects & Critical Events");
+                sb.AppendLine("| Timestamp | Device / Component | Event Type | Details / Message |");
+                sb.AppendLine("| :--- | :--- | :--- | :--- |");
+                foreach (var err in session.HardwareErrors.Take(15)) {
+                    sb.AppendLine($"| {err.Timestamp:HH:mm:ss} | **{err.DeviceName}** | `{err.ErrorType}` | {err.Message} |");
+                }
+                sb.AppendLine();
+            }
 
             if (session.CalibrationFrames.Any()) {
                 sb.AppendLine("### 🧪 Calibration & Utility Frames Quarantine");
@@ -115,12 +127,28 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine();
             }
 
+            if (session.WeatherSamples.Any()) {
+                sb.AppendLine("### 🌡️ Environmental Diagnostics & Ambient Conditions");
+                sb.AppendLine("| Metric | Min | Max | Mean / Value | Status / Margin |");
+                sb.AppendLine("| :--- | :--- | :--- | :--- | :--- |");
+                sb.AppendLine($"| **Ambient Temp (°C)** | {session.AmbientTempMin:F1}°C | {session.AmbientTempMax:F1}°C | **{session.AmbientTempAvg:F1}°C** | Optimal |");
+                sb.AppendLine($"| **Relative Humidity (%)** | {session.HumidityMin:F0}% | {session.HumidityMax:F0}% | **{session.HumidityAvg:F0}%** | {(session.HumidityAvg > 85 ? "⚠️ High Humidity" : "Normal")} |");
+                sb.AppendLine($"| **Dew Point (°C)** | {session.DewPointMin:F1}°C | {session.DewPointMax:F1}°C | **{session.DewPointAvg:F1}°C** | Dew Margin: {session.MinDewPointMargin:F1}°C |");
+                if (session.SqmAvg > 0) {
+                    sb.AppendLine($"| **SQM Sky Quality** | -- | -- | **{session.SqmAvg:F2} mag/arcsec²** | Sky Brightness |");
+                }
+                sb.AppendLine($"| **Dew Heater Status** | -- | -- | **{session.DewHeaterStatus}** | Duty Cycle |");
+                sb.AppendLine();
+            }
+
             sb.AppendLine("---");
             sb.AppendLine();
             sb.AppendLine("## 🎯 Target Diagnostics");
 
             foreach (var target in session.Targets) {
                 sb.AppendLine($"### 🎯 Target: {target.TargetName}");
+                if (!string.IsNullOrWhiteSpace(target.TargetCoordinates)) sb.AppendLine($"- **Coordinates:** {target.TargetCoordinates}");
+                if (!string.IsNullOrWhiteSpace(target.RotatorAngle)) sb.AppendLine($"- **Rotator Position Angle:** {target.RotatorAngle}");
                 sb.AppendLine($"- **Duration:** {FormatTimeSpan(target.Duration)} ({target.StartTime:HH:mm} - {target.EndTime:HH:mm})");
                 sb.AppendLine($"- **Integration:** {FormatTimeSpan(TimeSpan.FromSeconds(target.TotalIntegrationSeconds))}");
                 sb.AppendLine($"- **Filters Used:** {target.FiltersSummary}");

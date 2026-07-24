@@ -72,7 +72,34 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 ));
             }
 
-            // Render AF Blocks (Orange)
+            // Render Dithering Markers (Amber Circles)
+            foreach (var dither in session.DitherEvents) {
+                double startOffsetSec = (dither.StartTime - session.SessionStart).TotalSeconds;
+                double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
+
+                svg.Add(new XElement(SvgNs + "circle",
+                    new XAttribute("cx", x.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("cy", (barY + barHeight / 2).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("r", "3.0"),
+                    new XAttribute("fill", "#F59E0B")
+                ));
+            }
+
+            // Render Hardware Disconnect / Error Lines (Pink/Red Lines)
+            foreach (var err in session.HardwareErrors) {
+                double startOffsetSec = (err.Timestamp - session.SessionStart).TotalSeconds;
+                double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
+
+                svg.Add(new XElement(SvgNs + "rect",
+                    new XAttribute("x", (x - 1.5).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y", (barY - 6).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("width", "3"),
+                    new XAttribute("height", (barHeight + 12).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("fill", "#FF0055")
+                ));
+            }
+
+            // Render AF Blocks (Bright Yellow #FFD166)
             var allAf = session.Targets.SelectMany(t => t.AutofocusRuns).ToList();
             foreach (var af in allAf) {
                 double startOffsetSec = (af.Timestamp - session.SessionStart).TotalSeconds;
@@ -83,7 +110,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     new XAttribute("y", barY - 5),
                     new XAttribute("width", "6"),
                     new XAttribute("height", barHeight + 10),
-                    new XAttribute("fill", "#FF9F43"),
+                    new XAttribute("fill", "#FFD166"),
                     new XAttribute("rx", "2")
                 ));
             }
@@ -104,12 +131,42 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 ));
             }
 
+            // X-Axis Timestamps & Ticks under Timeline Bar
+            int numTicks = 6;
+            for (int i = 0; i <= numTicks; i++) {
+                double frac = (double)i / numTicks;
+                double x = paddingLeft + (frac * drawWidth);
+                DateTime tickTime = session.SessionStart.AddSeconds(frac * totalSeconds);
+                string timeLabel = tickTime.ToString("HH:mm");
+
+                svg.Add(new XElement(SvgNs + "line",
+                    new XAttribute("x1", x.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y1", (barY + barHeight).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("x2", x.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y2", (barY + barHeight + 4).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("stroke", "#475569"),
+                    new XAttribute("stroke-width", "1")
+                ));
+
+                svg.Add(new XElement(SvgNs + "text",
+                    new XAttribute("x", x.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y", (barY + barHeight + 16).ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("fill", "#94A3B8"),
+                    new XAttribute("font-size", "11"),
+                    new XAttribute("font-family", "Segoe UI, sans-serif"),
+                    new XAttribute("text-anchor", "middle"),
+                    timeLabel
+                ));
+            }
+
             // Legend
             double legendY = 135;
             AddLegendItem(svg, 40, legendY, "#00D26A", "Good Light Exposure");
-            AddLegendItem(svg, 200, legendY, "#EF4444", "Sub-optimal / Bad Frame");
-            AddLegendItem(svg, 370, legendY, "#FF9F43", "Autofocus");
-            AddLegendItem(svg, 470, legendY, "#9B59B6", "Meridian Flip");
+            AddLegendItem(svg, 195, legendY, "#EF4444", "Sub-optimal Frame");
+            AddLegendItem(svg, 340, legendY, "#FFD166", "Autofocus");
+            AddLegendItem(svg, 435, legendY, "#9B59B6", "Meridian Flip");
+            AddLegendItem(svg, 545, legendY, "#F59E0B", "Dither");
+            AddLegendItem(svg, 625, legendY, "#FF0055", "Hardware Event");
 
             return svg.ToString();
         }

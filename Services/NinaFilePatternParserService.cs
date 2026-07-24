@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 
+using System.Collections.Concurrent;
+
 namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
     public class ParsedTelemetry {
         public string TargetName { get; set; } = string.Empty;
@@ -18,37 +20,40 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
     }
 
     public static class NinaFilePatternParserService {
+        private static readonly ConcurrentDictionary<string, Regex> PatternCache = new ConcurrentDictionary<string, Regex>();
 
         public static Regex CompilePatternRegex(string pattern) {
             if (string.IsNullOrWhiteSpace(pattern)) return new Regex("$^");
 
-            // Normalize path separators
-            string p = pattern.Replace('/', '\\').Trim('\\');
+            return PatternCache.GetOrAdd(pattern, p => {
+                // Normalize path separators
+                string norm = p.Replace('/', '\\').Trim('\\');
 
-            // Escape special regex characters
-            string escaped = Regex.Escape(p);
+                // Escape special regex characters
+                string escaped = Regex.Escape(norm);
 
-            // Replace escaped $$TAG$$ with named regex capture groups
-            string patternRegex = escaped
-                .Replace(@"\$\$TARGETNAME\$\$", @"(?<TargetName>[^\\/_]+?)")
-                .Replace(@"\$\$IMAGETYPE\$\$", @"(?<ImageType>LIGHT|DARK|FLAT|BIAS)")
-                .Replace(@"\$\$DATETIME\$\$", @"(?<DateTime>\d{4}[-_]\d{2}[-_]\d{2}[-_]\d{2}[-_]\d{2}[-_]\d{2})")
-                .Replace(@"\$\$DATE\$\$", @"(?<Date>\d{4}[-_]\d{2}[-_]\d{2})")
-                .Replace(@"\$\$DATEMINUS12\$\$", @"(?<DateMinus12>\d{4}[-_]\d{2}[-_]\d{2})")
-                .Replace(@"\$\$TIME\$\$", @"(?<Time>\d{2}[-_]\d{2}[-_]\d{2})")
-                .Replace(@"\$\$FILTER\$\$", @"(?<Filter>[^\\/_]+?)")
-                .Replace(@"\$\$EXPOSURETIME\$\$", @"(?<Exposure>[\d\.,]+)")
-                .Replace(@"\$\$GAIN\$\$", @"(?<Gain>[\d\.,]+)")
-                .Replace(@"\$\$OFFSET\$\$", @"(?<Offset>[\d\.,]+)")
-                .Replace(@"\$\$SENSORTEMP\$\$", @"(?<SensorTemp>[-\d\.,]+)")
-                .Replace(@"\$\$HFR\$\$", @"(?<HFR>[\d\.,]+)")
-                .Replace(@"\$\$STARCOUNT\$\$", @"(?<StarCount>\d+)")
-                .Replace(@"\$\$RMS\$\$", @"(?<RMS>[\d\.,]+)")
-                .Replace(@"\$\$FRAMENR\$\$", @"(?<FrameNr>\d+)")
-                .Replace(@"\$\$NUMBER\$\$", @"(?<FrameNr>\d+)")
-                .Replace(@"\$\$FWHM\$\$", @"(?<FWHM>[\d\.,]+)");
+                // Replace escaped $$TAG$$ with named regex capture groups
+                string patternRegex = escaped
+                    .Replace(@"\$\$TARGETNAME\$\$", @"(?<TargetName>[^\\/_]+?)")
+                    .Replace(@"\$\$IMAGETYPE\$\$", @"(?<ImageType>LIGHT|DARK|FLAT|BIAS)")
+                    .Replace(@"\$\$DATETIME\$\$", @"(?<DateTime>\d{4}[-_]\d{2}[-_]\d{2}[-_]\d{2}[-_]\d{2}[-_]\d{2})")
+                    .Replace(@"\$\$DATE\$\$", @"(?<Date>\d{4}[-_]\d{2}[-_]\d{2})")
+                    .Replace(@"\$\$DATEMINUS12\$\$", @"(?<DateMinus12>\d{4}[-_]\d{2}[-_]\d{2})")
+                    .Replace(@"\$\$TIME\$\$", @"(?<Time>\d{2}[-_]\d{2}[-_]\d{2})")
+                    .Replace(@"\$\$FILTER\$\$", @"(?<Filter>[^\\/_]+?)")
+                    .Replace(@"\$\$EXPOSURETIME\$\$", @"(?<Exposure>[\d\.,]+)")
+                    .Replace(@"\$\$GAIN\$\$", @"(?<Gain>[\d\.,]+)")
+                    .Replace(@"\$\$OFFSET\$\$", @"(?<Offset>[\d\.,]+)")
+                    .Replace(@"\$\$SENSORTEMP\$\$", @"(?<SensorTemp>[-\d\.,]+)")
+                    .Replace(@"\$\$HFR\$\$", @"(?<HFR>[\d\.,]+)")
+                    .Replace(@"\$\$STARCOUNT\$\$", @"(?<StarCount>\d+)")
+                    .Replace(@"\$\$RMS\$\$", @"(?<RMS>[\d\.,]+)")
+                    .Replace(@"\$\$FRAMENR\$\$", @"(?<FrameNr>\d+)")
+                    .Replace(@"\$\$NUMBER\$\$", @"(?<FrameNr>\d+)")
+                    .Replace(@"\$\$FWHM\$\$", @"(?<FWHM>[\d\.,]+)");
 
-            return new Regex(patternRegex + @"(?:\.fits|\.fit|\.xisf|\.tif)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+                return new Regex(patternRegex + @"(?:\.fits|\.fit|\.xisf|\.tif)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            });
         }
 
         public static ParsedTelemetry ParsePathWithPattern(string fullPath, string ninaPattern) {

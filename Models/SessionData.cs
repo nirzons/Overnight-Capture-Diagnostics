@@ -64,6 +64,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public List<PlateSolveRecord> PlateSolves { get; set; } = new List<PlateSolveRecord>();
         public List<PolarAlignmentRecord> PolarAlignments { get; set; } = new List<PolarAlignmentRecord>();
         public List<AnomalyRecord> MasterAnomalies { get; set; } = new List<AnomalyRecord>();
+        public List<DitherRecord> DitherEvents { get; set; } = new List<DitherRecord>();
+        public List<HardwareErrorRecord> HardwareErrors { get; set; } = new List<HardwareErrorRecord>();
+        public long TotalStorageBytes { get; set; }
 
         public bool EmergencySafetyAbort { get; set; }
         public string SafetyAbortReason { get; set; } = string.Empty;
@@ -75,6 +78,20 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
 
         public double MasterQualityScore { get; set; }
         public double ThermalFocusSlopeStepsPerDegree { get; set; } // Focuser steps / °C
+
+        // Environmental & Dew Heater Telemetry Summaries
+        public double AmbientTempMin { get; set; }
+        public double AmbientTempMax { get; set; }
+        public double AmbientTempAvg { get; set; }
+        public double HumidityMin { get; set; }
+        public double HumidityMax { get; set; }
+        public double HumidityAvg { get; set; }
+        public double DewPointMin { get; set; }
+        public double DewPointMax { get; set; }
+        public double DewPointAvg { get; set; }
+        public double SqmAvg { get; set; }
+        public double MinDewPointMargin { get; set; } = 99.0;
+        public string DewHeaterStatus { get; set; } = "Not Monitored";
 
         public List<string> FiltersUsed => Targets
             .SelectMany(t => t.Frames.Where(f => !f.IsCalibrationFrame).Select(f => f.Filter))

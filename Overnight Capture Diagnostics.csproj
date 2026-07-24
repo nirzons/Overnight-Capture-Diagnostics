@@ -22,15 +22,9 @@
     <None Include="manifest.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <Resource Include="logo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Resource>
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="if not exist &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; ( mkdir &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; )&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.dll&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.pdb&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.deps.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.runtimeconfig.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(ProjectDir)manifest.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(ProjectDir)logo.png&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;" />
+    <Exec Command="if not exist &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; ( mkdir &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; )&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.dll&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.pdb&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.deps.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.runtimeconfig.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(ProjectDir)manifest.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;" />
   </Target>
 </Project>

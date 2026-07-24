@@ -40,6 +40,36 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             } else {
                 session.MasterQualityScore = 100.0;
             }
+
+            // Calculate Environmental & Weather Summaries
+            if (session.WeatherSamples.Any()) {
+                session.AmbientTempMin = session.WeatherSamples.Min(w => w.AmbientTemperature);
+                session.AmbientTempMax = session.WeatherSamples.Max(w => w.AmbientTemperature);
+                session.AmbientTempAvg = session.WeatherSamples.Average(w => w.AmbientTemperature);
+
+                session.HumidityMin = session.WeatherSamples.Min(w => w.Humidity);
+                session.HumidityMax = session.WeatherSamples.Max(w => w.Humidity);
+                session.HumidityAvg = session.WeatherSamples.Average(w => w.Humidity);
+
+                session.DewPointMin = session.WeatherSamples.Min(w => w.DewPoint);
+                session.DewPointMax = session.WeatherSamples.Max(w => w.DewPoint);
+                session.DewPointAvg = session.WeatherSamples.Average(w => w.DewPoint);
+
+                var sqmSamples = session.WeatherSamples.Where(w => w.SkyQuality > 0).ToList();
+                if (sqmSamples.Any()) {
+                    session.SqmAvg = sqmSamples.Average(w => w.SkyQuality);
+                }
+
+                session.MinDewPointMargin = session.WeatherSamples.Min(w => w.AmbientTemperature - w.DewPoint);
+
+                if (session.MinDewPointMargin <= 2.0) {
+                    session.MasterAnomalies.Add(new AnomalyRecord {
+                        Severity = AnomalySeverity.Warning,
+                        Category = "Environmental",
+                        Description = $"Ambient temperature approached within {session.MinDewPointMargin:F1}°C of the dew point during the session. Risk of optical dew formation."
+                    });
+                }
+            }
         }
 
         private static void CalculateTargetStatistics(TargetSessionData target, double pixelScaleArcsec) {
@@ -131,7 +161,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (f.GuideTotalRms > 0 && target.GuideRmsMedian > 0) {
                     double rmsArcsec = f.GuideTotalRms;
-                    if (rmsArcsec > target.GuideRmsMedian + (2.5 * target.GuideRmsStdDev) || rmsArcsec > 1.50) {
+                    double maxAllowedRms = Math.Max(2.5, pixelScaleArcsec * 1.5);
+                    if (rmsArcsec > target.GuideRmsMedian + (2.5 * target.GuideRmsStdDev) || (rmsArcsec > target.GuideRmsMedian * 2.0 && rmsArcsec > maxAllowedRms)) {
                         isBad = true;
                         reasons.Add($"Guiding RMS Spike ({rmsArcsec:F2}\" vs Median {target.GuideRmsMedian:F2}\")");
                         target.BadRmsCount++;

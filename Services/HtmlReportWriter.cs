@@ -61,9 +61,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Header Section
             sb.AppendLine("    <div class=\"header\">");
-            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">{analysisType}</span></h1>");
+            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.1</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
             sb.AppendLine($"      <div class=\"meta\">");
-            sb.AppendLine($"        <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
+            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.1 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
             sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
             sb.AppendLine($"      </div>");
             sb.AppendLine("      <div>");
@@ -130,6 +130,47 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
             sb.AppendLine("    </div>");
 
+            // Hardware Errors & Disconnects Card
+            if (session.HardwareErrors.Any()) {
+                sb.AppendLine("    <div class=\"card\">");
+                sb.AppendLine("      <h2>⚠️ Hardware Disconnects & Critical Events</h2>");
+                sb.AppendLine("      <table>");
+                sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Device / Component</th><th>Event Type</th><th>Details</th></tr></thead>");
+                sb.AppendLine("        <tbody>");
+                foreach (var err in session.HardwareErrors.Take(15)) {
+                    sb.AppendLine($"          <tr><td>{err.Timestamp:HH:mm:ss}</td><td><strong style=\"color: #F87171;\">{err.DeviceName}</strong></td><td><code>{err.ErrorType}</code></td><td>{err.Message}</td></tr>");
+                }
+                sb.AppendLine("        </tbody>");
+                sb.AppendLine("      </table>");
+                sb.AppendLine("    </div>");
+            }
+
+            // Environmental Diagnostics Card
+            if (session.WeatherSamples.Any()) {
+                sb.AppendLine("    <div class=\"card\">");
+                sb.AppendLine("      <h2>🌡️ Environmental Diagnostics & Ambient Conditions</h2>");
+                sb.AppendLine("      <table>");
+                sb.AppendLine("        <thead><tr><th>Metric</th><th>Min</th><th>Max</th><th>Mean / Value</th><th>Status</th></tr></thead>");
+                sb.AppendLine("        <tbody>");
+                sb.AppendLine($"          <tr><td><strong>Ambient Temp (°C)</strong></td><td>{session.AmbientTempMin:F1}°C</td><td>{session.AmbientTempMax:F1}°C</td><td><strong style=\"color: #60A5FA;\">{session.AmbientTempAvg:F1}°C</strong></td><td>Optimal</td></tr>");
+                sb.AppendLine($"          <tr><td><strong>Relative Humidity (%)</strong></td><td>{session.HumidityMin:F0}%</td><td>{session.HumidityMax:F0}%</td><td><strong>{session.HumidityAvg:F0}%</strong></td><td>{(session.HumidityAvg > 85 ? "<span style=\"color: #F59E0B;\">⚠️ High Humidity</span>" : "Normal")}</td></tr>");
+                sb.AppendLine($"          <tr><td><strong>Dew Point (°C)</strong></td><td>{session.DewPointMin:F1}°C</td><td>{session.DewPointMax:F1}°C</td><td><strong>{session.DewPointAvg:F1}°C</strong></td><td>Dew Margin: {session.MinDewPointMargin:F1}°C</td></tr>");
+                if (session.SqmAvg > 0) {
+                    sb.AppendLine($"          <tr><td><strong>SQM Sky Quality</strong></td><td>--</td><td>--</td><td><strong style=\"color: #38BDF8;\">{session.SqmAvg:F2} mag/arcsec²</strong></td><td>Sky Brightness</td></tr>");
+                }
+                sb.AppendLine($"          <tr><td><strong>Dew Heater Status</strong></td><td>--</td><td>--</td><td><strong>{session.DewHeaterStatus}</strong></td><td>Duty Cycle</td></tr>");
+                sb.AppendLine("        </tbody>");
+                sb.AppendLine("      </table>");
+
+                if (session.MinDewPointMargin <= 2.0) {
+                    sb.AppendLine($"      <div class=\"anomaly-group\" style=\"border-left-color: #F59E0B; margin-top: 12px;\">");
+                    sb.AppendLine($"        <div class=\"anomaly-title\" style=\"color: #F59E0B;\">⚠️ Dew Risk Alert</div>");
+                    sb.AppendLine($"        <div style=\"color: #CBD5E1; font-size: 13px;\">Ambient temperature approached within <strong>{session.MinDewPointMargin:F1}°C</strong> of the dew point during the session. Ensure dew heaters remain active.</div>");
+                    sb.AppendLine("      </div>");
+                }
+                sb.AppendLine("    </div>");
+            }
+
             // HFR & Star Profile Chart Card
             sb.AppendLine("    <div class=\"card\">");
             sb.AppendLine("      <h2>📈 HFR & Star Count Profile</h2>");
@@ -142,7 +183,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             foreach (var target in session.Targets) {
                 sb.AppendLine("    <div class=\"card\">");
                 sb.AppendLine($"      <h2>🎯 Target Diagnostics: {target.TargetName}</h2>");
-                sb.AppendLine($"      <p><strong>Duration:</strong> {(int)target.Duration.TotalHours}h {target.Duration.Minutes}m | <strong>Filters Used:</strong> {target.FiltersSummary} | <strong>Quality Score:</strong> 🌟 {target.QualityScore:F0}/100</p>");
+                string coordStr = !string.IsNullOrWhiteSpace(target.TargetCoordinates) ? $" | <strong>Coordinates:</strong> {target.TargetCoordinates}" : "";
+                string rotStr = !string.IsNullOrWhiteSpace(target.RotatorAngle) ? $" | <strong>Rotator Angle:</strong> {target.RotatorAngle}" : "";
+                sb.AppendLine($"      <p><strong>Duration:</strong> {(int)target.Duration.TotalHours}h {target.Duration.Minutes}m{coordStr}{rotStr} | <strong>Filters Used:</strong> {target.FiltersSummary} | <strong>Quality Score:</strong> 🌟 {target.QualityScore:F0}/100</p>");
 
                 sb.AppendLine("      <div style=\"margin-bottom: 16px;\">");
                 sb.AppendLine($"        <span class=\"health-pill health-good\">Good/Accepted: {target.GoodFrameCount} ({target.AcceptanceRatePercent:F1}%)</span>");
