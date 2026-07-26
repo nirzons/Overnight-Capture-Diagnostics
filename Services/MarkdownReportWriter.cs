@@ -28,8 +28,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string firstLightStr = session.FirstLightTimestamp.HasValue ? session.FirstLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
-            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.1.0 ({analysisType})");
-            sb.AppendLine($"> **Plugin Version:** v1.0.1.0 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
+            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.2.0 ({analysisType})");
+            sb.AppendLine($"> **Plugin Version:** v1.0.2.0 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
             sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr}");
             sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine();
@@ -111,8 +111,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("### ⚠️ Hardware Disconnects & Critical Events");
                 sb.AppendLine("| Timestamp | Device / Component | Event Type | Details / Message |");
                 sb.AppendLine("| :--- | :--- | :--- | :--- |");
-                foreach (var err in session.HardwareErrors.Take(15)) {
-                    sb.AppendLine($"| {err.Timestamp:HH:mm:ss} | **{err.DeviceName}** | `{err.ErrorType}` | {err.Message} |");
+                foreach (var err in session.HardwareErrors) {
+                    string timeStr = err.EndTimestamp.HasValue 
+                        ? $"{err.Timestamp:HH:mm:ss} - {err.EndTimestamp.Value:HH:mm:ss} ({err.Count}x)"
+                        : $"{err.Timestamp:HH:mm:ss}";
+                    string msg = err.Message;
+                    if (err.IsTerminal) msg += " **[TERMINAL FAILURE]**";
+                    if (err.CausesGuidingLoss) msg += "<br/>**[CRITICAL: NO GUIDING FOR REMAINDER OF SESSION]**";
+                    sb.AppendLine($"| {timeStr} | **{err.DeviceName}** | `{err.ErrorType}` | {msg} |");
                 }
                 sb.AppendLine();
             }
@@ -204,6 +210,30 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             : (flip.PreFlipRms > 0 ? $"{flip.PreFlipRms:F2}\" → --" : $"-- → {flip.PostFlipRms:F2}\"");
 
                         sb.AppendLine($"| {flip.Timestamp:HH:mm:ss} | {durStr} | {hfrTrend} | {starTrend} | {rmsTrend} | ✅ **{statusStr}** |");
+                    }
+                    sb.AppendLine();
+                }
+
+                if (target.AutofocusRuns.Any()) {
+                    sb.AppendLine("#### 🔍 AutoFocus Diagnostics");
+                    sb.AppendLine("| Timestamp | Filter | Temp | Curve Quality (R²) | HFR Change (Initial → Final) | Result |");
+                    sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- |");
+                    foreach (var af in target.AutofocusRuns) {
+                        string r2Str = af.RSquared > 0 ? $"{af.RSquared:F2}" : "--";
+                        string status = af.Successful ? "✅ Success" : "❌ Failed";
+                        
+                        string hfrChange = "--";
+                        if (af.HfrBefore > 0 && af.HfrAfter > 0) {
+                            double diff = af.HfrBefore - af.HfrAfter;
+                            if (Math.Abs(diff) < 0.01) {
+                                hfrChange = $"{af.HfrBefore:F2} px → {af.HfrAfter:F2} px (No Change)";
+                            } else {
+                                string dir = diff > 0 ? "Impr" : "Degr";
+                                hfrChange = $"{af.HfrBefore:F2} px → {af.HfrAfter:F2} px ({Math.Abs(diff):F2} px {dir})";
+                            }
+                        }
+                        
+                        sb.AppendLine($"| {af.Timestamp:HH:mm:ss} | {af.Filter} | {af.Temperature:F1}°C | {r2Str} | {hfrChange} | {status} |");
                     }
                     sb.AppendLine();
                 }

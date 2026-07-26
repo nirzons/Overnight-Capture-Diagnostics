@@ -4,6 +4,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
     public class AutofocusRecord {
         public DateTime Timestamp { get; set; }
         public string TargetName { get; set; } = string.Empty;
+        public string Filter { get; set; } = string.Empty;
         public string TriggerReason { get; set; } = "Unknown";
         public int BestPosition { get; set; }
         public double HfrBefore { get; set; }

@@ -50,6 +50,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             @"(?:Disconnected\s+(?<Device>Camera|mount|Telescope|Focuser|Filter Wheel|Rotator|Switch|Dome|Flat Device|Weather Device)|(?<Device>\w+VM|\w+Driver|\w+Camera|\w+Mount)\.cs\|Disconnect)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex RegexHardwareConnect = new Regex(
+            @"(?:Successfully connected\s+(?<Device>Camera|mount|Telescope|Focuser|Filter Wheel|Rotator|Switch|Dome|Flat Device|Weather Device)|(?<Device>\w+VM|\w+Driver|\w+Camera|\w+Mount)\.cs\|.*\|Successfully connected)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         private static readonly Regex RegexMeridianFlipStart = new Regex(
             @"(?:Starting meridian flip routine|Executing Meridian Flip|Meridian Flip - Start|Initiating Meridian Flip|Meridian Flip - Initializing)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -224,34 +228,29 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             currentLogEq.CameraName = mCam.Groups["Name"].Value.Trim();
                             if (string.IsNullOrWhiteSpace(sessionData.Equipment.CameraName) || sessionData.Equipment.CameraName == "Not Connected")
                                 sessionData.Equipment.CameraName = currentLogEq.CameraName;
-                            continue;
                         }
                         var mMnt = RegexConnectMount.Match(line);
                         if (mMnt.Success) {
                             currentLogEq.MountName = mMnt.Groups["Name"].Value.Trim();
                             if (string.IsNullOrWhiteSpace(sessionData.Equipment.MountName) || sessionData.Equipment.MountName == "Not Connected")
                                 sessionData.Equipment.MountName = currentLogEq.MountName;
-                            continue;
                         }
                         var mFoc = RegexConnectFocuser.Match(line);
                         if (mFoc.Success) {
                             currentLogEq.FocuserName = mFoc.Groups["Name"].Value.Trim();
                             if (string.IsNullOrWhiteSpace(sessionData.Equipment.FocuserName) || sessionData.Equipment.FocuserName == "Not Connected")
                                 sessionData.Equipment.FocuserName = currentLogEq.FocuserName;
-                            continue;
                         }
                         var mFw = RegexConnectFilterWheel.Match(line);
                         if (mFw.Success) {
                             currentLogEq.FilterWheelName = mFw.Groups["Name"].Value.Trim();
                             if (string.IsNullOrWhiteSpace(sessionData.Equipment.FilterWheelName) || sessionData.Equipment.FilterWheelName == "Not Connected")
                                 sessionData.Equipment.FilterWheelName = currentLogEq.FilterWheelName;
-                            continue;
                         }
                         var mPhd = RegexConnectPhd2.Match(line);
                         if (mPhd.Success) {
                             currentLogEq.GuiderName = "PHD2 Guider";
                             sessionData.Equipment.GuiderName = currentLogEq.GuiderName;
-                            continue;
                         }
 
                         var mOpt = RegexPlateSolveParams.Match(line);
@@ -315,6 +314,19 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 DeviceName = dev,
                                 ErrorType = "Disconnect",
                                 Message = $"Device '{dev}' disconnected"
+                            });
+                        }
+
+                        // Hardware Connect Tracking
+                        var mConn = RegexHardwareConnect.Match(line);
+                        if (mConn.Success) {
+                            string dev = mConn.Groups["Device"].Value;
+                            if (string.IsNullOrWhiteSpace(dev)) dev = "Device";
+                            sessionData.HardwareErrors.Add(new HardwareErrorRecord {
+                                Timestamp = logTimestamp,
+                                DeviceName = dev,
+                                ErrorType = "Connect",
+                                Message = $"Device '{dev}' connected"
                             });
                         }
 
@@ -695,10 +707,21 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 .OrderBy(d => d.StartTime)
                 .ToList();
 
-            sessionData.HardwareErrors = sessionData.HardwareErrors
-                .Where(h => h.Timestamp >= sessionData.SessionStart && h.Timestamp <= sessionData.SessionEnd)
-                .OrderBy(h => h.Timestamp)
-                .ToList();
+            var consolidated = new List<HardwareErrorRecord>();
+            foreach (var h in sessionData.HardwareErrors.OrderBy(x => x.Timestamp)) {
+                if (h.Timestamp < sessionData.SessionStart.AddHours(-2) || h.Timestamp > sessionData.SessionEnd) continue;
+                
+                var last = consolidated.LastOrDefault(x => x.DeviceName == h.DeviceName && x.ErrorType == h.ErrorType && x.Message == h.Message);
+                if (last != null) {
+                    if ((h.Timestamp - (last.EndTimestamp ?? last.Timestamp)).TotalMinutes < 30) {
+                        last.EndTimestamp = h.Timestamp;
+                        last.Count++;
+                        continue;
+                    }
+                }
+                consolidated.Add(h);
+            }
+            sessionData.HardwareErrors = consolidated;
 
             var lightFrames = allFrames.Where(f => !f.IsCalibrationFrame).OrderBy(f => f.Timestamp).ToList();
             if (lightFrames.Any()) {
@@ -707,6 +730,26 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
 
             var calibrationFrames = allFrames.Where(f => f.IsCalibrationFrame).ToList();
+            if (calibrationFrames.Any()) {
+                sessionData.FirstLightTimestamp = sessionData.FirstLightTimestamp ?? calibrationFrames.First().Timestamp;
+                sessionData.LastLightTimestamp = sessionData.LastLightTimestamp ?? calibrationFrames.Last().Timestamp;
+            }
+
+            if (sessionData.LastLightTimestamp != null) {
+                var lastLight = sessionData.LastLightTimestamp.Value;
+                foreach (var err in sessionData.HardwareErrors) {
+                    if (err.ErrorType != "Connect" && (err.EndTimestamp ?? err.Timestamp) >= lastLight.AddMinutes(-10)) {
+                        err.IsTerminal = true;
+                    }
+                }
+            }
+
+            // Flag Guiding Lost Indefinitely
+            var lastPhdEvent = sessionData.HardwareErrors.LastOrDefault(e => e.DeviceName == "PHD2 Guider");
+            if (lastPhdEvent != null && lastPhdEvent.ErrorType != "Connect") {
+                lastPhdEvent.CausesGuidingLoss = true;
+            }
+
             if (calibrationFrames.Any()) {
                 var calibSummary = calibrationFrames
                     .GroupBy(f => f.CalibrationType)
@@ -938,6 +981,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         string? line;
                         bool inGuideSection = false;
                         DateTime guideSessionStart = default;
+                        DateTime lastGuideTime = default;
 
                         while ((line = sr.ReadLine()) != null) {
                             if (line.StartsWith("Guiding Begins at", StringComparison.OrdinalIgnoreCase)) {
@@ -949,24 +993,20 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 inGuideSection = true;
                                 continue;
                             }
+                            if (guideSessionStart != default && lastGuideTime == default) {
+                                lastGuideTime = guideSessionStart;
+                            }
 
                             if (line.StartsWith("Guiding Ends", StringComparison.OrdinalIgnoreCase)) {
                                 inGuideSection = false;
                                 continue;
                             }
 
-                            if (line.Contains("INFO: DITHER by", StringComparison.OrdinalIgnoreCase) || line.Contains("Dither", StringComparison.OrdinalIgnoreCase)) {
-                                string[] dParts = line.Split(',');
-                                DateTime dTime = default;
-                                if (dParts.Length >= 2 && DateTime.TryParse(dParts[1].Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out dTime)) {
+                            if (line.Contains("INFO: DITHER by", StringComparison.OrdinalIgnoreCase)) {
+                                if (lastGuideTime != default) {
                                     sessionData.DitherEvents.Add(new DitherRecord {
-                                        StartTime = dTime,
-                                        SettleTime = dTime.AddSeconds(10)
-                                    });
-                                } else if (guideSessionStart != default) {
-                                    sessionData.DitherEvents.Add(new DitherRecord {
-                                        StartTime = guideSessionStart,
-                                        SettleTime = guideSessionStart.AddSeconds(10)
+                                        StartTime = lastGuideTime,
+                                        SettleTime = lastGuideTime.AddSeconds(10)
                                     });
                                 }
                                 continue;
@@ -984,10 +1024,100 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 }
 
                                 if (gTime != default) {
+                                    lastGuideTime = gTime;
                                     double dx = ParseDouble(parts[4]);
                                     double dy = ParseDouble(parts[5]);
                                     if (dx != 0 || dy != 0) {
                                         allSamples.Add(new PhdSample { Timestamp = gTime, Dx = dx, Dy = dy });
+                                    }
+                                }
+                            }
+                        }
+                    } catch { }
+                }
+
+                // Ingest PHD2 Debug Logs for Camera Disconnects & Alerts
+                var phdDebugFiles = new List<FileInfo>();
+                foreach (var logDir in allLogFiles.Select(f => f.DirectoryName).Distinct()) {
+                    if (string.IsNullOrWhiteSpace(logDir) || !Directory.Exists(logDir)) continue;
+                    try {
+                        var dirInfo = new DirectoryInfo(logDir);
+                        phdDebugFiles.AddRange(dirInfo.GetFiles("PHD2_Debug*.txt"));
+                        
+                        string subPhd = Path.Combine(logDir, "PHD2");
+                        if (Directory.Exists(subPhd)) {
+                            phdDebugFiles.AddRange(new DirectoryInfo(subPhd).GetFiles("PHD2_Debug*.txt"));
+                        }
+                    } catch { }
+                }
+
+                if (!phdDebugFiles.Any()) {
+                    string defaultPhdDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PHD2");
+                    if (Directory.Exists(defaultPhdDir)) {
+                        try {
+                            phdDebugFiles.AddRange(new DirectoryInfo(defaultPhdDir).GetFiles("PHD2_Debug*.txt"));
+                        } catch { }
+                    }
+                }
+
+                foreach (var debugFile in phdDebugFiles) {
+                    try {
+                        using var fs = new FileStream(debugFile.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                        using var sr = new StreamReader(fs);
+                        string? line;
+                        
+                        DateTime currentDebugDate = default;
+                        TimeSpan sessionStartTimeOfDay = default;
+                        var mDate = Regex.Match(debugFile.Name, @"(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})");
+                        if (mDate.Success) {
+                            if (DateTime.TryParseExact(mDate.Value, "yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate)) {
+                                currentDebugDate = parsedDate.Date;
+                                sessionStartTimeOfDay = parsedDate.TimeOfDay;
+                            }
+                        }
+
+                        while ((line = sr.ReadLine()) != null) {
+                            if (line.Contains("Alert:", StringComparison.OrdinalIgnoreCase)) {
+                                string[] parts = line.Split(new[] { ' ' }, 3, StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length >= 3) {
+                                    string timeStr = parts[0];
+                                    if (TimeSpan.TryParse(timeStr, out TimeSpan timeOfDay) && currentDebugDate != default) {
+                                        DateTime alertTime = currentDebugDate.Add(timeOfDay);
+                                        
+                                        // Handle next day wrap-around by comparing against the session start time
+                                        if (timeOfDay < sessionStartTimeOfDay && sessionStartTimeOfDay.Hours >= 12) {
+                                            alertTime = alertTime.AddDays(1);
+                                        }
+
+                                        int alertIdx = line.IndexOf("Alert:", StringComparison.OrdinalIgnoreCase);
+                                        if (alertIdx >= 0) {
+                                            string msg = line.Substring(alertIdx + "Alert:".Length).Trim();
+                                            sessionData.HardwareErrors.Add(new HardwareErrorRecord {
+                                                Timestamp = alertTime,
+                                                DeviceName = "PHD2 Guider",
+                                                ErrorType = "Alert",
+                                                Message = msg
+                                            });
+                                        }
+                                    }
+                                }
+                            } else if (line.IndexOf("Status Line: Camera Connected", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                string[] parts = line.Split(new[] { ' ' }, 3, StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length >= 3) {
+                                    string timeStr = parts[0];
+                                    if (TimeSpan.TryParse(timeStr, out TimeSpan timeOfDay) && currentDebugDate != default) {
+                                        DateTime alertTime = currentDebugDate.Add(timeOfDay);
+                                        
+                                        if (timeOfDay < sessionStartTimeOfDay && sessionStartTimeOfDay.Hours >= 12) {
+                                            alertTime = alertTime.AddDays(1);
+                                        }
+
+                                        sessionData.HardwareErrors.Add(new HardwareErrorRecord {
+                                            Timestamp = alertTime,
+                                            DeviceName = "PHD2 Guider",
+                                            ErrorType = "Connect",
+                                            Message = "Guider camera connected"
+                                        });
                                     }
                                 }
                             }
@@ -1062,6 +1192,25 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             double hfrAfter = 0;
                             double hfrBefore = 0;
                             double temp = 0;
+                            double rSquared = 0;
+                            double rSquaredThreshold = 0.7;
+                            string filter = string.Empty;
+
+                            if (root.TryGetProperty("Filter", out var filterElem) && filterElem.ValueKind == System.Text.Json.JsonValueKind.String) {
+                                filter = filterElem.GetString() ?? string.Empty;
+                            }
+
+                            if (root.TryGetProperty("FocuserOptions", out var focOpts) && focOpts.TryGetProperty("RSquaredThreshold", out var rsqThreshElem) && rsqThreshElem.ValueKind == System.Text.Json.JsonValueKind.Number) {
+                                rSquaredThreshold = rsqThreshElem.GetDouble();
+                            }
+
+                            if (root.TryGetProperty("RSquares", out var rSquares)) {
+                                if (rSquares.TryGetProperty("Quadratic", out var quadElem) && quadElem.ValueKind == System.Text.Json.JsonValueKind.Number) {
+                                    rSquared = quadElem.GetDouble();
+                                } else if (rSquares.TryGetProperty("Hyperbolic", out var hypElem) && hypElem.ValueKind == System.Text.Json.JsonValueKind.Number) {
+                                    rSquared = hypElem.GetDouble();
+                                }
+                            }
 
                             if (root.TryGetProperty("CalculatedFocusPoint", out var calcPt)) {
                                 if (calcPt.TryGetProperty("Position", out var posElem)) bestPos = (int)posElem.GetDouble();
@@ -1080,15 +1229,20 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             if (root.TryGetProperty("Temperature", out var tempElem)) {
                                 temp = tempElem.GetDouble();
                             }
+                            
+                            // N.I.N.A 3 sets FinalHFR when AF finishes successfully.
+                            bool isSuccess = rSquared >= rSquaredThreshold;
 
                             if (!allAutofocus.Any(a => Math.Abs((a.Timestamp - ts).TotalSeconds) < 2)) {
                                 allAutofocus.Add(new AutofocusRecord {
                                     Timestamp = ts,
+                                    Filter = filter,
                                     BestPosition = bestPos,
                                     HfrBefore = hfrBefore,
                                     HfrAfter = hfrAfter,
                                     Temperature = temp,
-                                    Successful = true
+                                    RSquared = rSquared,
+                                    Successful = isSuccess
                                 });
                             }
                         }

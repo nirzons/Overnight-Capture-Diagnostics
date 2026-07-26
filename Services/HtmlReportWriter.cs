@@ -61,9 +61,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Header Section
             sb.AppendLine("    <div class=\"header\">");
-            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.1.0</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
+            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.2.0</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
             sb.AppendLine($"      <div class=\"meta\">");
-            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.1.0 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
+            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.2.0 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
             sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
             sb.AppendLine($"      </div>");
             sb.AppendLine("      <div>");
@@ -137,8 +137,15 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("      <table>");
                 sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Device / Component</th><th>Event Type</th><th>Details</th></tr></thead>");
                 sb.AppendLine("        <tbody>");
-                foreach (var err in session.HardwareErrors.Take(15)) {
-                    sb.AppendLine($"          <tr><td>{err.Timestamp:HH:mm:ss}</td><td><strong style=\"color: #F87171;\">{err.DeviceName}</strong></td><td><code>{err.ErrorType}</code></td><td>{err.Message}</td></tr>");
+                foreach (var err in session.HardwareErrors) {
+                    string timeStr = err.EndTimestamp.HasValue 
+                        ? $"{err.Timestamp:HH:mm:ss} - {err.EndTimestamp.Value:HH:mm:ss} ({err.Count}x)"
+                        : $"{err.Timestamp:HH:mm:ss}";
+                    string msg = err.Message;
+                    if (err.IsTerminal) msg += " <strong>[TERMINAL FAILURE]</strong>";
+                    if (err.CausesGuidingLoss) msg += "<br/><strong>[CRITICAL: NO GUIDING FOR REMAINDER OF SESSION]</strong>";
+                    string devColor = err.ErrorType == "Connect" ? "#10B981" : "#F87171";
+                    sb.AppendLine($"          <tr><td>{timeStr}</td><td><strong style=\"color: {devColor};\">{err.DeviceName}</strong></td><td><code>{err.ErrorType}</code></td><td>{msg}</td></tr>");
                 }
                 sb.AppendLine("        </tbody>");
                 sb.AppendLine("      </table>");
@@ -244,6 +251,33 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             : (flip.PreFlipRms > 0 ? $"{flip.PreFlipRms:F2}\" → --" : $"-- → {flip.PostFlipRms:F2}\"");
 
                         sb.AppendLine($"          <tr><td>{flip.Timestamp:HH:mm:ss}</td><td>{durStr}</td><td>{hfrTrend}</td><td>{starTrend}</td><td>{rmsTrend}</td><td><strong style=\"color: #10B981;\">✅ {statusStr}</strong></td></tr>");
+                    }
+                    sb.AppendLine("        </tbody>");
+                    sb.AppendLine("      </table>");
+                }
+
+                if (target.AutofocusRuns.Any()) {
+                    sb.AppendLine("      <h3>🔍 AutoFocus Diagnostics</h3>");
+                    sb.AppendLine("      <table>");
+                    sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Filter</th><th>Temp</th><th>Curve Quality (R²)</th><th>HFR Change (Initial → Final)</th><th>Result</th></tr></thead>");
+                    sb.AppendLine("        <tbody>");
+                    foreach (var af in target.AutofocusRuns) {
+                        string r2Str = af.RSquared > 0 ? $"{af.RSquared:F2}" : "--";
+                        string status = af.Successful ? "<strong style=\"color: #10B981;\">✅ Success</strong>" : "<strong style=\"color: #EF4444;\">❌ Failed</strong>";
+                        
+                        string hfrChange = "--";
+                        if (af.HfrBefore > 0 && af.HfrAfter > 0) {
+                            double diff = af.HfrBefore - af.HfrAfter;
+                            if (Math.Abs(diff) < 0.01) {
+                                hfrChange = $"{af.HfrBefore:F2} px &rarr; {af.HfrAfter:F2} px (No Change)";
+                            } else {
+                                string dir = diff > 0 ? "Impr" : "Degr";
+                                string diffColor = diff > 0 ? "#10B981" : "#EF4444";
+                                hfrChange = $"{af.HfrBefore:F2} px &rarr; {af.HfrAfter:F2} px (<span style=\"color: {diffColor};\">{Math.Abs(diff):F2} px {dir}</span>)";
+                            }
+                        }
+                        
+                        sb.AppendLine($"          <tr><td>{af.Timestamp:HH:mm:ss}</td><td>{af.Filter}</td><td>{af.Temperature:F1}°C</td><td>{r2Str}</td><td>{hfrChange}</td><td>{status}</td></tr>");
                     }
                     sb.AppendLine("        </tbody>");
                     sb.AppendLine("      </table>");

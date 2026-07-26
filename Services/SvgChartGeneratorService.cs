@@ -110,7 +110,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     new XAttribute("y", barY - 5),
                     new XAttribute("width", "6"),
                     new XAttribute("height", barHeight + 10),
-                    new XAttribute("fill", "#FFD166"),
+                    new XAttribute("fill", af.Successful ? "#FFD166" : "#EF4444"),
                     new XAttribute("rx", "2")
                 ));
             }
@@ -129,6 +129,33 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     new XAttribute("fill", "#9B59B6"),
                     new XAttribute("rx", "2")
                 ));
+            }
+
+            // Render Terminal Failures (Red Line)
+            foreach (var err in session.HardwareErrors.Where(e => e.IsTerminal)) {
+                double errSec = (err.Timestamp - session.SessionStart).TotalSeconds;
+                if (errSec >= 0 && errSec <= totalSeconds) {
+                    double x = paddingLeft + ((errSec / totalSeconds) * drawWidth);
+                    svg.Add(new XElement(SvgNs + "line",
+                        new XAttribute("x1", x.ToString("F1", CultureInfo.InvariantCulture)),
+                        new XAttribute("y1", 20),
+                        new XAttribute("x2", x.ToString("F1", CultureInfo.InvariantCulture)),
+                        new XAttribute("y2", barY + barHeight + 10),
+                        new XAttribute("stroke", "#EF4444"),
+                        new XAttribute("stroke-width", "3"),
+                        new XAttribute("stroke-dasharray", "4,2")
+                    ));
+                    svg.Add(new XElement(SvgNs + "text",
+                        new XAttribute("x", x.ToString("F1", CultureInfo.InvariantCulture)),
+                        new XAttribute("y", 15),
+                        new XAttribute("fill", "#EF4444"),
+                        new XAttribute("font-size", "11"),
+                        new XAttribute("font-weight", "bold"),
+                        new XAttribute("font-family", "Segoe UI, sans-serif"),
+                        new XAttribute("text-anchor", "middle"),
+                        "TERMINAL FAILURE"
+                    ));
+                }
             }
 
             // X-Axis Timestamps & Ticks under Timeline Bar
@@ -162,7 +189,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             // Legend
             double legendY = 135;
             AddLegendItem(svg, 40, legendY, "#00D26A", "Good Light Exposure");
-            AddLegendItem(svg, 195, legendY, "#EF4444", "Sub-optimal Frame");
+            AddLegendItem(svg, 185, legendY, "#EF4444", "Sub-optimal / AF Fail");
             AddLegendItem(svg, 340, legendY, "#FFD166", "Autofocus");
             AddLegendItem(svg, 435, legendY, "#9B59B6", "Meridian Flip");
             AddLegendItem(svg, 545, legendY, "#F59E0B", "Dither");
