@@ -28,6 +28,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public int StarCountMin { get; set; }
         public int StarCountMax { get; set; }
         public double StarCountAvg { get; set; }
+        
+        // Sensor Temp Statistics
+        public double? SensorTempMin { get; set; }
+        public double? SensorTempMax { get; set; }
+        public double? SensorTempAvg { get; set; }
+        public double? SensorTempMedian { get; set; }
+        public int AbnormalSensorTempFrames { get; set; }
         public double StarCountMedian { get; set; }
         public double StarCountStdDev { get; set; }
 

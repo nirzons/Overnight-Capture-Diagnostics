@@ -302,23 +302,35 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
 
             var camera = CameraMediator?.GetInfo();
             if (camera != null && camera.Connected && !string.IsNullOrWhiteSpace(camera.Name)) {
-                session.Equipment.CameraName = camera.Name;
-                session.Equipment.CameraWidth = camera.XSize;
-                session.Equipment.CameraHeight = camera.YSize;
-                session.Equipment.PixelSizeMicrons = camera.PixelSize;
-                session.Equipment.CameraTempSetpoint = camera.TemperatureSetPoint;
+                if (string.IsNullOrWhiteSpace(session.Equipment.CameraName) || session.Equipment.CameraName == "Not Connected") {
+                    session.Equipment.CameraName = camera.Name;
+                }
+                if (session.Equipment.CameraWidth == 0) session.Equipment.CameraWidth = camera.XSize;
+                if (session.Equipment.CameraHeight == 0) session.Equipment.CameraHeight = camera.YSize;
+                if (session.Equipment.PixelSizeMicrons == 0) session.Equipment.PixelSizeMicrons = camera.PixelSize;
+                if (session.Equipment.CameraTempSetpoint == 0) session.Equipment.CameraTempSetpoint = camera.TemperatureSetPoint;
             }
 
             var telescope = TelescopeMediator?.GetInfo();
             if (telescope != null && telescope.Connected && !string.IsNullOrWhiteSpace(telescope.Name)) {
-                session.Equipment.TelescopeName = telescope.Name;
-                session.Equipment.MountName = telescope.Name;
+                // In N.I.N.A, the TelescopeMediator refers to the Mount.
+                if (string.IsNullOrWhiteSpace(session.Equipment.MountName) || session.Equipment.MountName == "Not Connected") {
+                    session.Equipment.MountName = telescope.Name;
+                }
             }
 
             if (session.IsLiveSession) {
                 var scopeSettings = ProfileService?.ActiveProfile?.TelescopeSettings;
-                if (scopeSettings != null && scopeSettings.FocalLength > 0 && !double.IsNaN(scopeSettings.FocalLength)) {
-                    session.Equipment.FocalLengthMm = scopeSettings.FocalLength;
+                if (scopeSettings != null) {
+                    if (scopeSettings.FocalLength > 0 && !double.IsNaN(scopeSettings.FocalLength) && session.Equipment.FocalLengthMm == 0) {
+                        session.Equipment.FocalLengthMm = scopeSettings.FocalLength;
+                    }
+                    if (!string.IsNullOrWhiteSpace(scopeSettings.Name) && (string.IsNullOrWhiteSpace(session.Equipment.TelescopeName) || session.Equipment.TelescopeName == "Not Connected")) {
+                        session.Equipment.TelescopeName = scopeSettings.Name;
+                    }
+                    if (!string.IsNullOrWhiteSpace(scopeSettings.MountName) && (string.IsNullOrWhiteSpace(session.Equipment.MountName) || session.Equipment.MountName == "Not Connected")) {
+                        session.Equipment.MountName = scopeSettings.MountName;
+                    }
                 }
 
                 var site = ProfileService?.ActiveProfile?.AstrometrySettings;

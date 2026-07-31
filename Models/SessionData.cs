@@ -47,6 +47,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
 
     public class SessionData {
         public DateTime SessionStart { get; set; }
+        public DateTime? SequenceStart { get; set; }
         public DateTime SessionEnd { get; set; }
         public TimeSpan TotalSessionDuration => SessionEnd > SessionStart ? SessionEnd - SessionStart : TimeSpan.Zero;
 
@@ -60,6 +61,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
 
         public List<TargetSessionData> Targets { get; set; } = new List<TargetSessionData>();
         public List<CalibrationSummary> CalibrationFrames { get; set; } = new List<CalibrationSummary>();
+        
+        public double MaxDewPointMargin { get; set; } = double.MaxValue;
+        
         public List<WeatherSample> WeatherSamples { get; set; } = new List<WeatherSample>();
         public List<PlateSolveRecord> PlateSolves { get; set; } = new List<PlateSolveRecord>();
         public List<PolarAlignmentRecord> PolarAlignments { get; set; } = new List<PolarAlignmentRecord>();

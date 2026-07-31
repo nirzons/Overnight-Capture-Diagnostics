@@ -52,6 +52,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("| Category | Device / Property | Details |");
                     sb.AppendLine("| :--- | :--- | :--- |");
                     sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
+                    if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
+                        double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
+                        sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
+                    }
                     sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1} |");
                     sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
                     sb.AppendLine($"| **Mount** | {eq.MountName} | Guider: {eq.GuiderName} |");
@@ -64,6 +68,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("| Category | Device / Property | Details |");
                 sb.AppendLine("| :--- | :--- | :--- |");
                 sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
+                if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
+                    double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
+                    sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
+                }
                 sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1} |");
                 sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
                 sb.AppendLine($"| **Mount** | {eq.MountName} | Guider: {eq.GuiderName} |");
@@ -186,6 +194,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
                 if (target.GuideTotalRmsAvg > 0) {
                     sb.AppendLine($"| **Total RMS (arcsec)** | {target.GuideRmsMin:F2}\" | {target.GuideRmsMax:F2}\" | **{target.GuideTotalRmsAvg:F2}\"** | {target.GuideRmsMedian:F2}\" | {target.GuideRmsStdDev:F2}\" |");
+                }
+                if (target.SensorTempMedian.HasValue) {
+                    sb.AppendLine($"| **Sensor Temp (°C)** | {target.SensorTempMin:F1} | {target.SensorTempMax:F1} | {target.SensorTempAvg:F1} | **{target.SensorTempMedian:F1}** | -- |");
                 }
                 sb.AppendLine();
 

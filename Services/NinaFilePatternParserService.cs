@@ -14,7 +14,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         public double HFR { get; set; }
         public int StarCount { get; set; }
         public double RMS { get; set; }
-        public double SensorTemp { get; set; }
+        public double? SensorTemp { get; set; }
         public double Gain { get; set; }
         public bool IsSuccess { get; set; }
     }
@@ -96,10 +96,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         /// <summary>
         /// Attempts to discover active pattern from N.I.N.A profile files on disk if not provided via live plugin profile service.
         /// </summary>
-        public static string DiscoverPatternFromDisk() {
+        public static string DiscoverPatternFromDisk(string overrideProfileDir = null) {
             try {
-                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                string profilesDir = Path.Combine(localAppData, "NINA", "Profiles");
+                string profilesDir = overrideProfileDir;
+                if (string.IsNullOrEmpty(profilesDir)) {
+                    string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    profilesDir = Path.Combine(localAppData, "NINA", "Profiles");
+                }
                 if (Directory.Exists(profilesDir)) {
                     var profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
                     DateTime latestTime = DateTime.MinValue;
@@ -119,6 +122,57 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
             } catch { }
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Attempts to discover active equipment details from N.I.N.A profile files on disk if not provided via logs.
+        /// </summary>
+        public static Models.EquipmentDetails DiscoverEquipmentFromDisk(string overrideProfileDir = null) {
+            try {
+                string profilesDir = overrideProfileDir;
+                if (string.IsNullOrEmpty(profilesDir)) {
+                    string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    profilesDir = Path.Combine(localAppData, "NINA", "Profiles");
+                }
+                if (Directory.Exists(profilesDir)) {
+                    var profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                    DateTime latestTime = DateTime.MinValue;
+                    string latestText = null;
+
+                    foreach (var file in profileFiles) {
+                        if (file.LastWriteTime > latestTime) {
+                            latestText = File.ReadAllText(file.FullName);
+                            latestTime = file.LastWriteTime;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(latestText)) {
+                        var eq = new Models.EquipmentDetails();
+
+                        var mTel = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<Name>([^<]+)</Name>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (mTel.Success) eq.TelescopeName = mTel.Groups[1].Value.Trim();
+
+                        var mMount = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<MountName>([^<]+)</MountName>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (mMount.Success) eq.MountName = mMount.Groups[1].Value.Trim();
+
+                        var mGuider = Regex.Match(latestText, @"<GuiderSettings[^>]*>.*?<GuiderName>([^<]+)</GuiderName>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (mGuider.Success) eq.GuiderName = mGuider.Groups[1].Value.Trim();
+
+                        var mFocalLength = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<FocalLength>([^<]+)</FocalLength>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (mFocalLength.Success && double.TryParse(mFocalLength.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double fl)) {
+                            eq.FocalLengthMm = fl;
+                        }
+
+                        var mFocalRatio = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<FocalRatio>([^<]+)</FocalRatio>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (mFocalRatio.Success && double.TryParse(mFocalRatio.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double fr) && fr > 0 && eq.FocalLengthMm > 0) {
+                            eq.ApertureMm = eq.FocalLengthMm / fr;
+                        }
+
+                        return eq;
+                    }
+                }
+            } catch { }
+            return null;
         }
     }
 }

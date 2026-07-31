@@ -9,7 +9,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double ExposureSeconds { get; set; }
         public double HFR { get; set; }
         public int StarCount { get; set; }
-        public double CameraTemperature { get; set; }
+        public double? CameraTemperature { get; set; }
         public double AmbientTemperature { get; set; }
         public double Altitude { get; set; }
         public double Azimuth { get; set; }

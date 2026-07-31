@@ -33,11 +33,21 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 "Session Execution Timeline"
             ));
 
-            if (session.SessionEnd <= session.SessionStart) {
+            var allFrames = session.Targets.SelectMany(t => t.Frames).Where(f => !f.IsCalibrationFrame).OrderBy(f => f.Timestamp).ToList();
+            
+            DateTime timelineStart = session.SessionStart;
+            DateTime timelineEnd = session.SessionEnd;
+
+            if (allFrames.Any()) {
+                timelineStart = allFrames.Min(f => f.Timestamp);
+                timelineEnd = allFrames.Max(f => f.Timestamp);
+            }
+
+            if (timelineEnd <= timelineStart) {
                 return svg.ToString();
             }
 
-            double totalSeconds = (session.SessionEnd - session.SessionStart).TotalSeconds;
+            double totalSeconds = (timelineEnd - timelineStart).TotalSeconds;
             if (totalSeconds <= 0) totalSeconds = 1;
 
             double barY = 50;
@@ -54,9 +64,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             ));
 
             // Render Light Frame Exposure Blocks (Green for Good, Red for Bad/Rejected)
-            var allFrames = session.Targets.SelectMany(t => t.Frames).Where(f => !f.IsCalibrationFrame).OrderBy(f => f.Timestamp).ToList();
             foreach (var f in allFrames) {
-                double startOffsetSec = (f.Timestamp - session.SessionStart).TotalSeconds;
+                double startOffsetSec = (f.Timestamp - timelineStart).TotalSeconds;
                 double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
                 double w = Math.Max(2, (f.ExposureSeconds / totalSeconds) * drawWidth);
 
@@ -74,7 +83,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Render Dithering Markers (Amber Circles)
             foreach (var dither in session.DitherEvents) {
-                double startOffsetSec = (dither.StartTime - session.SessionStart).TotalSeconds;
+                double startOffsetSec = (dither.StartTime - timelineStart).TotalSeconds;
                 double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
 
                 svg.Add(new XElement(SvgNs + "circle",
@@ -87,7 +96,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Render Hardware Disconnect / Error Lines (Pink/Red Lines)
             foreach (var err in session.HardwareErrors) {
-                double startOffsetSec = (err.Timestamp - session.SessionStart).TotalSeconds;
+                double startOffsetSec = (err.Timestamp - timelineStart).TotalSeconds;
                 double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
 
                 svg.Add(new XElement(SvgNs + "rect",
@@ -102,7 +111,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             // Render AF Blocks (Bright Yellow #FFD166)
             var allAf = session.Targets.SelectMany(t => t.AutofocusRuns).ToList();
             foreach (var af in allAf) {
-                double startOffsetSec = (af.Timestamp - session.SessionStart).TotalSeconds;
+                double startOffsetSec = (af.Timestamp - timelineStart).TotalSeconds;
                 double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
 
                 svg.Add(new XElement(SvgNs + "rect",
@@ -118,7 +127,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             // Render Meridian Flip Blocks (Purple)
             var allFlips = session.Targets.SelectMany(t => t.MeridianFlips).ToList();
             foreach (var flip in allFlips) {
-                double startOffsetSec = (flip.Timestamp - session.SessionStart).TotalSeconds;
+                double startOffsetSec = (flip.Timestamp - timelineStart).TotalSeconds;
                 double x = paddingLeft + ((startOffsetSec / totalSeconds) * drawWidth);
 
                 svg.Add(new XElement(SvgNs + "rect",
@@ -133,7 +142,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Render Terminal Failures (Red Line)
             foreach (var err in session.HardwareErrors.Where(e => e.IsTerminal)) {
-                double errSec = (err.Timestamp - session.SessionStart).TotalSeconds;
+                double errSec = (err.Timestamp - timelineStart).TotalSeconds;
                 if (errSec >= 0 && errSec <= totalSeconds) {
                     double x = paddingLeft + ((errSec / totalSeconds) * drawWidth);
                     svg.Add(new XElement(SvgNs + "line",
@@ -163,7 +172,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             for (int i = 0; i <= numTicks; i++) {
                 double frac = (double)i / numTicks;
                 double x = paddingLeft + (frac * drawWidth);
-                DateTime tickTime = session.SessionStart.AddSeconds(frac * totalSeconds);
+                DateTime tickTime = timelineStart.AddSeconds(frac * totalSeconds);
                 string timeLabel = tickTime.ToString("HH:mm");
 
                 svg.Add(new XElement(SvgNs + "line",

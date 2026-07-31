@@ -11,7 +11,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             foreach (var target in session.Targets) {
                 double pixelScale = session.Equipment.PixelScaleArcsec > 0 ? session.Equipment.PixelScaleArcsec : 2.15;
-                CalculateTargetStatistics(target, pixelScale);
+                CalculateTargetStatistics(target, pixelScale, session.Equipment.CameraTempSetpoint);
                 totalNightIntegration += target.TotalIntegrationSeconds;
             }
 
@@ -72,7 +72,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
         }
 
-        private static void CalculateTargetStatistics(TargetSessionData target, double pixelScaleArcsec) {
+        private static void CalculateTargetStatistics(TargetSessionData target, double pixelScaleArcsec, double setpoint) {
             var lights = target.Frames.Where(f => !f.IsCalibrationFrame).ToList();
             target.TotalLightFrames = lights.Count;
             target.TotalIntegrationSeconds = lights.Sum(f => f.ExposureSeconds);
@@ -124,6 +124,25 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 if (decList.Any()) target.GuideDecRmsAvg = decList.Average();
             }
 
+            // Sensor Temp Stats
+            var validSensorTemps = lights.Where(f => f.CameraTemperature.HasValue).Select(f => f.CameraTemperature.Value).OrderBy(t => t).ToList();
+            if (validSensorTemps.Any()) {
+                target.SensorTempMin = validSensorTemps.First();
+                target.SensorTempMax = validSensorTemps.Last();
+                target.SensorTempAvg = validSensorTemps.Average();
+                target.SensorTempMedian = validSensorTemps[validSensorTemps.Count / 2];
+
+                double referenceTemp = target.SensorTempMedian.Value;
+
+                foreach (var frame in lights.Where(f => f.CameraTemperature.HasValue)) {
+                    if (Math.Abs(frame.CameraTemperature.Value - referenceTemp) > 2.0) {
+                        target.AbnormalSensorTempFrames++;
+                        // We will just flag it in Anomalies during the evaluation loop below, or right here.
+                        // Actually, let's flag it here, and the evaluation loop can pick it up or we just add it to Anomalies.
+                    }
+                }
+            }
+
             // Sub-Frame Rejection & Health Engine Evaluation
             target.GoodFrameCount = 0;
             target.BadFrameCount = 0;
@@ -166,6 +185,22 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         isBad = true;
                         reasons.Add($"Guiding RMS Spike ({rmsArcsec:F2}\" vs Median {target.GuideRmsMedian:F2}\")");
                         target.BadRmsCount++;
+                    }
+                }
+
+                if (f.CameraTemperature.HasValue && target.SensorTempMedian.HasValue) {
+                    double referenceTemp = target.SensorTempMedian.Value;
+                    if (Math.Abs(f.CameraTemperature.Value - referenceTemp) > 2.0) {
+                        target.Anomalies.Add(new AnomalyRecord {
+                            Timestamp = f.Timestamp,
+                            TargetName = target.TargetName,
+                            Category = "Sensor Temp Deviation",
+                            Description = $"Sensor Temp Deviation ({f.CameraTemperature.Value:F1}°C vs Median {referenceTemp:F1}°C)",
+                            Severity = AnomalySeverity.Warning,
+                            Value = f.CameraTemperature.Value,
+                            ExpectedValue = referenceTemp
+                        });
+                        // target.AbnormalSensorTempFrames is already counted above.
                     }
                 }
 

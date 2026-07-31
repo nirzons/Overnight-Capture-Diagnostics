@@ -5,8 +5,8 @@ using System.Runtime.InteropServices;
 [assembly: Guid("8f9c1e2d-3a4b-5c6d-7e8f-9a0b1c2d3e4f")]
 
 // [MANDATORY] Assembly versioning
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.4.0")]
+[assembly: AssemblyFileVersion("1.0.4.0")]
 
 // [MANDATORY] Name and description of your plugin
 [assembly: AssemblyTitle("Overnight Capture Diagnostics")]

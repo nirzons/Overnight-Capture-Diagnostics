@@ -105,8 +105,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("      <table>");
                     sb.AppendLine("        <thead><tr><th>Category</th><th>Device / Property</th><th>Details</th></tr></thead>");
                     sb.AppendLine("        <tbody>");
-                    sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
+                    sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
+                    if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
+                        double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
+                        sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{medianTarget:F1}°C</strong></td></tr>");
+                    }
                     sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Filter Wheel</strong></td><td>{eq.FilterWheelName}</td><td>Active Filters: {session.FiltersUsedFormatted}</td></tr>");
@@ -119,8 +123,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("      <table>");
                 sb.AppendLine("        <thead><tr><th>Category</th><th>Device / Property</th><th>Details</th></tr></thead>");
                 sb.AppendLine("        <tbody>");
-                sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
+                sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
+                if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
+                    double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
+                    sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{medianTarget:F1}°C</strong></td></tr>");
+                }
                 sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Filter Wheel</strong></td><td>{eq.FilterWheelName}</td><td>Active Filters: {session.FiltersUsedFormatted}</td></tr>");
@@ -225,6 +233,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
                 if (target.GuideTotalRmsAvg > 0) {
                     sb.AppendLine($"          <tr><td><strong>Total RMS (arcsec)</strong></td><td>{target.GuideRmsMin:F2}\"</td><td>{target.GuideRmsMax:F2}\"</td><td><strong style=\"color: #38BDF8;\">{target.GuideTotalRmsAvg:F2}\"</strong></td><td>{target.GuideRmsMedian:F2}\"</td><td>{target.GuideRmsStdDev:F2}\"</td></tr>");
+                }
+                if (target.SensorTempMedian.HasValue) {
+                    sb.AppendLine($"          <tr><td><strong>Sensor Temp (°C)</strong></td><td>{target.SensorTempMin:F1}</td><td>{target.SensorTempMax:F1}</td><td>{target.SensorTempAvg:F1}</td><td><strong style=\"color: #38BDF8;\">{target.SensorTempMedian:F1}</strong></td><td>--</td></tr>");
                 }
                 sb.AppendLine("        </tbody>");
                 sb.AppendLine("      </table>");

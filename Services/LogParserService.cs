@@ -74,6 +74,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             @"Calculated Alignment Errors:\s*Alt\s*(?<AltStr>.+?),\s*Az\s*(?<AzStr>.+?)\s*\(Alt:\s*(?<AltErr>[-\d\.,]+)'?,\s*Az:\s*(?<AzErr>[-\d\.,]+)'?\),\s*Total:\s*(?<TotalStr>.+?)\s*\((?<TotalErr>[\d\.,]+)'?\)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex Regex2PpaErrorNew = new Regex(
+            @"Calculated Alignment Errors:\s*Alt\s*(?<AltStr>.+?),\s*Az\s*(?<AzStr>.+?)\s*\(Total:\s*(?<TotalStr>.+?)\)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex RegexSequenceStart = new Regex(
+            @"(?:Advanced Sequence starting|Starting sequence|Sequence started)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         private static readonly Regex RegexTppaPattern = new Regex(
             @"Calculated alignment error\s*-\s*Altitude:\s*(?<altSign>[-+])?(?:(?<altDeg>\d+)[^0-9\'-]*)?\s*(?<altMin>\d+)\'\s*(?<altSec>\d+)?\"".*Azimuth:\s*(?<azSign>[-+])?(?:(?<azDeg>\d+)[^0-9\'-]*)?\s*(?<azMin>\d+)\'\s*(?<azSec>\d+)?\""",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -222,6 +230,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             sessionData.SessionEnd = logTimestamp;
                         }
 
+                        // Sequence Start Detection
+                        if (sessionData.SequenceStart == null) {
+                            if (RegexSequenceStart.IsMatch(line)) {
+                                sessionData.SequenceStart = logTimestamp;
+                            }
+                        }
+
                         // Equipment Detection Regexes
                         var mCam = RegexConnectCamera.Match(line);
                         if (mCam.Success) {
@@ -356,12 +371,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             seenFrameKeys.Add(fullPath);
 
-                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk();
+                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk(overrideLogDir);
                             var dynamicTelem = NinaFilePatternParserService.ParsePathWithPattern(fullPath, ninaPattern);
 
                             double expSecs, hfr, parsedRms;
                             int stars;
                             string parsedFilter, inlineTarget;
+                            double? sensorTemp = null;
 
                             if (dynamicTelem.IsSuccess && (dynamicTelem.HFR > 0 || dynamicTelem.StarCount > 0)) {
                                 expSecs = dynamicTelem.ExposureSeconds;
@@ -370,8 +386,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 parsedFilter = dynamicTelem.Filter;
                                 parsedRms = dynamicTelem.RMS;
                                 inlineTarget = dynamicTelem.TargetName;
+                                sensorTemp = dynamicTelem.SensorTemp;
                             } else {
-                                ParseNinaFilenameTelemetry(filename, out expSecs, out hfr, out stars, out parsedFilter, out parsedRms, out inlineTarget);
+                                ParseNinaFilenameTelemetry(filename, out expSecs, out hfr, out stars, out parsedFilter, out parsedRms, out inlineTarget, out sensorTemp);
                             }
 
                             string pathTarget = ExtractTargetFromPath(fullPath);
@@ -396,6 +413,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 HFR = hfr,
                                 StarCount = stars,
                                 GuideTotalRms = parsedRms,
+                                CameraTemperature = sensorTemp,
                                 IsCalibrationFrame = isCalib,
                                 CalibrationType = calType
                             };
@@ -477,6 +495,29 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         }
 
                         // 7. Polar Alignment Events (2PPA and TPPA)
+                        var m2PpaNew = Regex2PpaErrorNew.Match(line);
+                        if (m2PpaNew.Success) {
+                            string altStr = SanitizeAngleDegreeString(m2PpaNew.Groups["AltStr"].Value);
+                            string azStr = SanitizeAngleDegreeString(m2PpaNew.Groups["AzStr"].Value);
+                            string totStr = SanitizeAngleDegreeString(m2PpaNew.Groups["TotalStr"].Value);
+
+                            double altErr = ParseAngleStringToArcmin(altStr);
+                            double azErr = ParseAngleStringToArcmin(azStr);
+                            double totErr = ParseAngleStringToArcmin(totStr);
+
+                            allPolar.Add(new PolarAlignmentRecord {
+                                Timestamp = logTimestamp,
+                                AltitudeErrorArcmin = Math.Abs(altErr),
+                                AzimuthErrorArcmin = Math.Abs(azErr),
+                                TotalErrorArcmin = Math.Abs(totErr),
+                                AltitudeErrorFormatted = altStr,
+                                AzimuthErrorFormatted = azStr,
+                                TotalErrorFormatted = totStr,
+                                SourcePlugin = "2-Point Polar Alignment"
+                            });
+                            continue;
+                        }
+
                         var m2Ppa = Regex2PpaError.Match(line);
                         if (m2Ppa.Success) {
                             double altErr = ParseDouble(m2Ppa.Groups["AltErr"].Value);
@@ -677,6 +718,23 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sessionData.Equipment = rawProfiles.Last().Equipment;
             }
 
+            // Attempt to backfill missing equipment data from N.I.N.A's active profile
+            var profileEq = NinaFilePatternParserService.DiscoverEquipmentFromDisk(overrideLogDir);
+            if (profileEq != null) {
+                Action<EquipmentDetails> mergeEq = (eq) => {
+                    if (!string.IsNullOrEmpty(profileEq.TelescopeName)) eq.TelescopeName = profileEq.TelescopeName;
+                    if (!string.IsNullOrEmpty(profileEq.MountName)) eq.MountName = profileEq.MountName;
+                    if (!string.IsNullOrEmpty(profileEq.GuiderName)) eq.GuiderName = profileEq.GuiderName;
+                    if (eq.ApertureMm == 0 && profileEq.ApertureMm > 0) eq.ApertureMm = profileEq.ApertureMm;
+                    if (eq.FocalLengthMm == 0 && profileEq.FocalLengthMm > 0) eq.FocalLengthMm = profileEq.FocalLengthMm;
+                };
+
+                mergeEq(sessionData.Equipment);
+                foreach (var prof in sessionData.EquipmentProfiles) {
+                    mergeEq(prof.Equipment);
+                }
+            }
+
             // Group Frames into Targets
             var targetGroups = allFrames.GroupBy(f => f.TargetName).ToList();
             foreach (var group in targetGroups) {
@@ -709,7 +767,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             var consolidated = new List<HardwareErrorRecord>();
             foreach (var h in sessionData.HardwareErrors.OrderBy(x => x.Timestamp)) {
-                if (h.Timestamp < sessionData.SessionStart.AddHours(-2) || h.Timestamp > sessionData.SessionEnd) continue;
+                DateTime filterStart = sessionData.SequenceStart ?? sessionData.SessionStart;
+                if (h.Timestamp < filterStart || h.Timestamp > sessionData.SessionEnd) continue;
                 
                 var last = consolidated.LastOrDefault(x => x.DeviceName == h.DeviceName && x.ErrorType == h.ErrorType && x.Message == h.Message);
                 if (last != null) {
@@ -818,13 +877,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             return string.Empty;
         }
 
-        private static void ParseNinaFilenameTelemetry(string filename, out double expSecs, out double hfr, out int stars, out string filter, out double rms, out string inlineTarget) {
+        private static void ParseNinaFilenameTelemetry(string filename, out double expSecs, out double hfr, out int stars, out string filter, out double rms, out string inlineTarget, out double? sensorTemp) {
             expSecs = 0;
             hfr = 0;
             stars = 0;
             filter = string.Empty;
             rms = 0;
             inlineTarget = string.Empty;
+            sensorTemp = null;
 
             string nameWithoutExt = Path.GetFileNameWithoutExtension(filename);
             string[] tokens = nameWithoutExt.Split('_');
@@ -876,6 +936,21 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     string rmsNum = t.Substring(3).TrimStart('_').Replace(',', '.');
                     if (double.TryParse(rmsNum, NumberStyles.Any, CultureInfo.InvariantCulture, out double rmsVal)) {
                         rms = rmsVal;
+                        continue;
+                    }
+                }
+
+                // Temp: e.g. -10.00C or TEMP-10.00
+                if (t.EndsWith("C", StringComparison.OrdinalIgnoreCase)) {
+                    string tempStr = t.Substring(0, t.Length - 1).Replace(',', '.');
+                    if (double.TryParse(tempStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double tVal)) {
+                        sensorTemp = tVal;
+                        continue;
+                    }
+                } else if (t.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase)) {
+                    string tempStr = t.Substring(4).TrimStart('_').Replace(',', '.');
+                    if (double.TryParse(tempStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double tVal)) {
+                        sensorTemp = tVal;
                         continue;
                     }
                 }
@@ -1317,6 +1392,22 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         private static string SanitizeAngleDegreeString(string raw) {
             if (string.IsNullOrWhiteSpace(raw)) return raw;
             return raw.Replace("\uFFFD", "°");
+        }
+
+        private static readonly Regex RegexAngleString = new Regex(@"(?<sign>[-+])?(?<deg>\d+)[^\d]+(?<min>\d+)'\s*(?<sec>\d+)?\""", RegexOptions.Compiled);
+
+        private static double ParseAngleStringToArcmin(string angle) {
+            if (string.IsNullOrWhiteSpace(angle)) return 0.0;
+            var match = RegexAngleString.Match(angle);
+            if (match.Success) {
+                int deg = ParseInt(match.Groups["deg"].Value);
+                int min = ParseInt(match.Groups["min"].Value);
+                int sec = ParseInt(match.Groups["sec"].Value);
+                double arcmin = deg * 60.0 + min + (sec / 60.0);
+                if (match.Groups["sign"].Value == "-") arcmin = -arcmin;
+                return arcmin;
+            }
+            return 0.0;
         }
 
         private static double ParseDouble(string val) {
