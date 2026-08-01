@@ -127,7 +127,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         /// <summary>
         /// Attempts to discover active equipment details from N.I.N.A profile files on disk if not provided via logs.
         /// </summary>
-        public static Models.EquipmentDetails DiscoverEquipmentFromDisk(string overrideProfileDir = null) {
+        public static Models.EquipmentDetails DiscoverEquipmentFromDisk(string overrideProfileDir = null, bool enableDebugLogging = false) {
+            Action<string> logDebug = (msg) => {
+                if (enableDebugLogging) global::NINA.Core.Utility.Logger.Info($"[OCD Debug] DiscoverEquipment: {msg}");
+            };
+
             try {
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string defaultProfilesDir = Path.Combine(localAppData, "NINA", "Profiles");
@@ -137,32 +141,73 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (!string.IsNullOrEmpty(profilesDir) && Directory.Exists(profilesDir)) {
                     profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                    logDebug($"Checked overrideProfileDir '{profilesDir}'. Found {profileFiles.Length} profile files.");
+                    
+                    // Fallback: If no profiles are here, and this is a 'Logs' folder, check sibling 'Profiles' folder (e.g. for Beta/Nightly)
+                    if (profileFiles.Length == 0 && profilesDir.IndexOf("Logs", StringComparison.OrdinalIgnoreCase) >= 0) {
+                        try {
+                            var parent = Directory.GetParent(profilesDir);
+                            if (parent != null && parent.Name.Equals("Logs", StringComparison.OrdinalIgnoreCase)) {
+                                var ninaBaseDir = parent.Parent;
+                                if (ninaBaseDir != null) {
+                                    string potentialProfilesDir = Path.Combine(ninaBaseDir.FullName, "Profiles");
+                                    logDebug($"Checking sibling Profiles directory: '{potentialProfilesDir}'");
+                                    if (Directory.Exists(potentialProfilesDir)) {
+                                        profilesDir = potentialProfilesDir;
+                                        profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                                        logDebug($"Found {profileFiles.Length} profile files in sibling directory.");
+                                    }
+                                }
+                            }
+                        } catch (Exception ex) {
+                            logDebug($"Error resolving sibling Profiles dir: {ex.Message}");
+                        }
+                    }
                 }
                 
                 if (profileFiles.Length == 0 && Directory.Exists(defaultProfilesDir)) {
                     profilesDir = defaultProfilesDir;
                     profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                    logDebug($"Checked defaultProfilesDir '{profilesDir}'. Found {profileFiles.Length} profile files.");
                 }
 
                 if (profileFiles.Length > 0) {
                     DateTime latestTime = DateTime.MinValue;
                     string latestText = null;
+                    string selectedFile = null;
 
                     foreach (var file in profileFiles) {
                         if (file.LastWriteTime > latestTime) {
-                            latestText = File.ReadAllText(file.FullName);
-                            latestTime = file.LastWriteTime;
+                            try {
+                                using (var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                                using (var sr = new StreamReader(fs)) {
+                                    latestText = sr.ReadToEnd();
+                                }
+                                latestTime = file.LastWriteTime;
+                                selectedFile = file.Name;
+                            } catch (Exception ex) {
+                                logDebug($"Failed to read '{file.Name}': {ex.Message}");
+                            }
                         }
                     }
 
                     if (!string.IsNullOrEmpty(latestText)) {
+                        logDebug($"Successfully read latest profile: '{selectedFile}' (LastWriteTime: {latestTime})");
                         var eq = new Models.EquipmentDetails();
 
                         var mTel = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<Name>([^<]+)</Name>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                        if (mTel.Success) eq.TelescopeName = mTel.Groups[1].Value.Trim();
+                        if (mTel.Success) {
+                            eq.TelescopeName = mTel.Groups[1].Value.Trim();
+                            logDebug($"Extracted TelescopeName: {eq.TelescopeName}");
+                        } else {
+                            logDebug($"Regex failed to extract TelescopeName.");
+                        }
 
                         var mMount = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<MountName>([^<]+)</MountName>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                        if (mMount.Success) eq.MountName = mMount.Groups[1].Value.Trim();
+                        if (mMount.Success) {
+                            eq.MountName = mMount.Groups[1].Value.Trim();
+                            logDebug($"Extracted MountName: {eq.MountName}");
+                        }
 
                         var mGuider = Regex.Match(latestText, @"<GuiderSettings[^>]*>.*?<GuiderName>([^<]+)</GuiderName>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
                         if (mGuider.Success) eq.GuiderName = mGuider.Groups[1].Value.Trim();
@@ -170,6 +215,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         var mFocalLength = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<FocalLength>([^<]+)</FocalLength>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
                         if (mFocalLength.Success && double.TryParse(mFocalLength.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double fl)) {
                             eq.FocalLengthMm = fl;
+                            logDebug($"Extracted FocalLengthMm: {eq.FocalLengthMm}");
                         }
 
                         var mFocalRatio = Regex.Match(latestText, @"<TelescopeSettings[^>]*>.*?<FocalRatio>([^<]+)</FocalRatio>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -178,9 +224,15 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         }
 
                         return eq;
+                    } else {
+                        logDebug($"No content read from any .profile files.");
                     }
+                } else {
+                    logDebug($"No .profile files found to parse.");
                 }
-            } catch { }
+            } catch (Exception ex) {
+                logDebug($"Fatal exception in DiscoverEquipmentFromDisk: {ex.ToString()}");
+            }
             return null;
         }
     }

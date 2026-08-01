@@ -22,6 +22,7 @@
                     <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
                         <TextBlock Text="Session Date (YYYY-MM-DD):" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold" Foreground="#E2E8F0" />
                         <TextBox Text="{Binding TargetSessionDate, UpdateSourceTrigger=PropertyChanged}" Width="160" Height="24" VerticalContentAlignment="Center" Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#475569" ToolTip="Leave empty to analyze the latest session (spanning midnight). Or enter a past date (e.g. 2026-07-19) to analyze a specific past session!" />
+                        <CheckBox Content="Enable Debug Logs" IsChecked="{Binding EnableDebugLogging, UpdateSourceTrigger=PropertyChanged}" Margin="15,0,0,0" VerticalAlignment="Center" Foreground="#E2E8F0" ToolTip="Outputs detailed parsing info to the N.I.N.A. log file." />
                     </WrapPanel>
                 </StackPanel>
             </nina:SequenceBlockView.SequenceItemContent>

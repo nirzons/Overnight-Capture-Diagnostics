@@ -118,6 +118,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             }
         }
 
+        private bool enableDebugLogging = false;
+        [JsonProperty]
+        public bool EnableDebugLogging {
+            get => enableDebugLogging;
+            set {
+                enableDebugLogging = value;
+                RaisePropertyChanged(nameof(EnableDebugLogging));
+            }
+        }
+
         private string discordWebhookUrl = string.Empty;
         [JsonProperty]
         public string DiscordWebhookUrl {
@@ -197,7 +207,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
 
                 // 1. Parse Logs by Session Date
                 var parser = new LogParserService();
-                var session = parser.ParseLogFiles(TargetSessionDate, token);
+                var session = parser.ParseLogFiles(TargetSessionDate, token, null, EnableDebugLogging);
 
                 // Auto-detect Live vs Historic session
                 DateTime now = DateTime.Now;
@@ -319,26 +329,24 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 }
             }
 
-            if (session.IsLiveSession) {
-                var scopeSettings = ProfileService?.ActiveProfile?.TelescopeSettings;
-                if (scopeSettings != null) {
-                    if (scopeSettings.FocalLength > 0 && !double.IsNaN(scopeSettings.FocalLength) && session.Equipment.FocalLengthMm == 0) {
-                        session.Equipment.FocalLengthMm = scopeSettings.FocalLength;
-                    }
-                    if (!string.IsNullOrWhiteSpace(scopeSettings.Name) && (string.IsNullOrWhiteSpace(session.Equipment.TelescopeName) || session.Equipment.TelescopeName == "Not Connected")) {
-                        session.Equipment.TelescopeName = scopeSettings.Name;
-                    }
-                    if (!string.IsNullOrWhiteSpace(scopeSettings.MountName)) {
-                        session.Equipment.MountName = scopeSettings.MountName;
-                    }
+            var scopeSettings = ProfileService?.ActiveProfile?.TelescopeSettings;
+            if (scopeSettings != null) {
+                if (scopeSettings.FocalLength > 0 && !double.IsNaN(scopeSettings.FocalLength) && session.Equipment.FocalLengthMm == 0) {
+                    session.Equipment.FocalLengthMm = scopeSettings.FocalLength;
                 }
+                if (!string.IsNullOrWhiteSpace(scopeSettings.Name) && (string.IsNullOrWhiteSpace(session.Equipment.TelescopeName) || session.Equipment.TelescopeName == "Not Connected")) {
+                    session.Equipment.TelescopeName = scopeSettings.Name;
+                }
+                if (!string.IsNullOrWhiteSpace(scopeSettings.MountName)) {
+                    session.Equipment.MountName = scopeSettings.MountName;
+                }
+            }
 
-                var site = ProfileService?.ActiveProfile?.AstrometrySettings;
-                if (site != null) {
-                    if (site.Latitude != 0) session.Equipment.SiteLatitude = site.Latitude;
-                    if (site.Longitude != 0) session.Equipment.SiteLongitude = site.Longitude;
-                    if (site.Elevation != 0) session.Equipment.SiteElevation = site.Elevation;
-                }
+            var site = ProfileService?.ActiveProfile?.AstrometrySettings;
+            if (site != null) {
+                if (site.Latitude != 0) session.Equipment.SiteLatitude = site.Latitude;
+                if (site.Longitude != 0) session.Equipment.SiteLongitude = site.Longitude;
+                if (site.Elevation != 0) session.Equipment.SiteElevation = site.Elevation;
             }
 
             var focuser = FocuserMediator?.GetInfo();
@@ -370,6 +378,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 GenerateMarkdown = this.GenerateMarkdown,
                 GenerateHtml = this.GenerateHtml,
                 AutoOpenHtmlReport = this.AutoOpenHtmlReport,
+                EnableDebugLogging = this.EnableDebugLogging,
                 EnableDiscordWebhook = this.EnableDiscordWebhook,
                 DiscordWebhookUrl = this.DiscordWebhookUrl,
                 CurrentReadout = "--",

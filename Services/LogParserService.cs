@@ -135,7 +135,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             @"Platesolving with parameters:\s*FocalLength:\s*(?<FocalLength>[\d\.,]+)\s*PixelSize:\s*(?<PixelSize>[\d\.,]+)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token, string? overrideLogDir = null) {
+        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token, string? overrideLogDir = null, bool enableDebugLogging = false) {
             var sessionData = new SessionData();
 
             var logDirectories = new List<string>();
@@ -719,7 +719,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
 
             // Attempt to backfill missing equipment data from N.I.N.A's active profile
-            var profileEq = NinaFilePatternParserService.DiscoverEquipmentFromDisk(overrideLogDir);
+            var profileEq = NinaFilePatternParserService.DiscoverEquipmentFromDisk(overrideLogDir, enableDebugLogging);
             if (profileEq != null) {
                 Action<EquipmentDetails> mergeEq = (eq) => {
                     if (!string.IsNullOrEmpty(profileEq.TelescopeName)) eq.TelescopeName = profileEq.TelescopeName;
