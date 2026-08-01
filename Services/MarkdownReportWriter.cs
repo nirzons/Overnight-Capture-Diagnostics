@@ -28,8 +28,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string firstLightStr = session.FirstLightTimestamp.HasValue ? session.FirstLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
-            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.2.0 ({analysisType})");
-            sb.AppendLine($"> **Plugin Version:** v1.0.2.0 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
+            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.3.0 ({analysisType})");
+            sb.AppendLine($"> **Plugin Version:** v1.0.3.0 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
             sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr}");
             sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine();
@@ -115,11 +115,17 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
             sb.AppendLine();
 
-            if (session.HardwareErrors.Any()) {
+            var liveSessionErrors = session.HardwareErrors.Where(err => {
+                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                var errEnd = err.EndTimestamp ?? err.Timestamp;
+                return errEnd >= session.FirstLightTimestamp.Value && err.Timestamp <= session.LastLightTimestamp.Value;
+            }).ToList();
+
+            if (liveSessionErrors.Any()) {
                 sb.AppendLine("### ⚠️ Hardware Disconnects & Critical Events");
                 sb.AppendLine("| Timestamp | Device / Component | Event Type | Details / Message |");
                 sb.AppendLine("| :--- | :--- | :--- | :--- |");
-                foreach (var err in session.HardwareErrors) {
+                foreach (var err in liveSessionErrors) {
                     string timeStr = err.EndTimestamp.HasValue 
                         ? $"{err.Timestamp:HH:mm:ss} - {err.EndTimestamp.Value:HH:mm:ss} ({err.Count}x)"
                         : $"{err.Timestamp:HH:mm:ss}";

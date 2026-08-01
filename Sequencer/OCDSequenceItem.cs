@@ -328,7 +328,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                     if (!string.IsNullOrWhiteSpace(scopeSettings.Name) && (string.IsNullOrWhiteSpace(session.Equipment.TelescopeName) || session.Equipment.TelescopeName == "Not Connected")) {
                         session.Equipment.TelescopeName = scopeSettings.Name;
                     }
-                    if (!string.IsNullOrWhiteSpace(scopeSettings.MountName) && (string.IsNullOrWhiteSpace(session.Equipment.MountName) || session.Equipment.MountName == "Not Connected")) {
+                    if (!string.IsNullOrWhiteSpace(scopeSettings.MountName)) {
                         session.Equipment.MountName = scopeSettings.MountName;
                     }
                 }

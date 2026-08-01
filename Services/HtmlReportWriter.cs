@@ -61,9 +61,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Header Section
             sb.AppendLine("    <div class=\"header\">");
-            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.2.0</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
+            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.3.0</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
             sb.AppendLine($"      <div class=\"meta\">");
-            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.2.0 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
+            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.3.0 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
             sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
             sb.AppendLine($"      </div>");
             sb.AppendLine("      <div>");
@@ -139,13 +139,19 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine("    </div>");
 
             // Hardware Errors & Disconnects Card
-            if (session.HardwareErrors.Any()) {
+            var liveSessionErrors = session.HardwareErrors.Where(err => {
+                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                var errEnd = err.EndTimestamp ?? err.Timestamp;
+                return errEnd >= session.FirstLightTimestamp.Value && err.Timestamp <= session.LastLightTimestamp.Value;
+            }).ToList();
+
+            if (liveSessionErrors.Any()) {
                 sb.AppendLine("    <div class=\"card\">");
                 sb.AppendLine("      <h2>⚠️ Hardware Disconnects & Critical Events</h2>");
                 sb.AppendLine("      <table>");
                 sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Device / Component</th><th>Event Type</th><th>Details</th></tr></thead>");
                 sb.AppendLine("        <tbody>");
-                foreach (var err in session.HardwareErrors) {
+                foreach (var err in liveSessionErrors) {
                     string timeStr = err.EndTimestamp.HasValue 
                         ? $"{err.Timestamp:HH:mm:ss} - {err.EndTimestamp.Value:HH:mm:ss} ({err.Count}x)"
                         : $"{err.Timestamp:HH:mm:ss}";

@@ -129,13 +129,22 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         /// </summary>
         public static Models.EquipmentDetails DiscoverEquipmentFromDisk(string overrideProfileDir = null) {
             try {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string defaultProfilesDir = Path.Combine(localAppData, "NINA", "Profiles");
+                
                 string profilesDir = overrideProfileDir;
-                if (string.IsNullOrEmpty(profilesDir)) {
-                    string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                    profilesDir = Path.Combine(localAppData, "NINA", "Profiles");
+                FileInfo[] profileFiles = new FileInfo[0];
+
+                if (!string.IsNullOrEmpty(profilesDir) && Directory.Exists(profilesDir)) {
+                    profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
                 }
-                if (Directory.Exists(profilesDir)) {
-                    var profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                
+                if (profileFiles.Length == 0 && Directory.Exists(defaultProfilesDir)) {
+                    profilesDir = defaultProfilesDir;
+                    profileFiles = new DirectoryInfo(profilesDir).GetFiles("*.profile");
+                }
+
+                if (profileFiles.Length > 0) {
                     DateTime latestTime = DateTime.MinValue;
                     string latestText = null;
 
