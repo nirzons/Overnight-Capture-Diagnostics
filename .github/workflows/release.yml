@@ -23,10 +23,10 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore Dependencies
-        run: dotnet restore
+        run: dotnet restore "Overnight Capture Diagnostics.csproj"
 
       - name: Build Plugin (Release)
-        run: dotnet build -c Release --no-restore
+        run: dotnet build "Overnight Capture Diagnostics.csproj" -c Release --no-restore
 
       - name: Create Release Package (Zip)
         shell: powershell
