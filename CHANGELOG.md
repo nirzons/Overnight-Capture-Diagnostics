@@ -5,6 +5,17 @@ All notable changes to the **Overnight Capture Diagnostics** plugin for N.I.N.A.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.3.0] - 2026-08-01
+
+### Added
+- **Reverse Geocoding**: Automatically resolves rig GPS coordinates (Latitude and Longitude) into human-readable location names (e.g., "Zichron Ya'akov, Israel") via the OpenStreetMap Nominatim API. Falls back to "Observatory Site" if offline.
+- **Advanced Debug Logging**: Added a new UI checkbox to toggle verbose parsing debug logs. Detailed diagnostics on file locks and Regex matching are securely printed to N.I.N.A's native log file.
+
+### Fixed
+- **Historic Report Equipment Fallback**: Greatly improved resilience when reading `.profile` equipment files from disk. Implemented `FileShare.ReadWrite` to safely read profiles actively locked by N.I.N.A.
+- **In-Memory Equipment Backfill**: Removed restrictive session checks; historic reports now safely leverage N.I.N.A.'s active memory `ProfileService` to backfill missing Telescope and Mount details.
+- **Hardware Disconnect Filtering**: Hardware disconnect events are now properly filtered to only display events occurring within the active capture time block.
+
 ## [v1.0.0.0] - 2026-07-21
 
 ### Added
