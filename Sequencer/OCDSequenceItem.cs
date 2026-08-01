@@ -260,6 +260,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 // Populate Equipment info (merging live Mediators for live session vs log-parsed for historic)
                 PopulateEquipmentDetails(session);
 
+                if (session.Equipment != null && session.Equipment.SiteLatitude != 0 && session.Equipment.SiteLongitude != 0) {
+                    string locationName = await ReverseGeocodingService.GetLocationNameAsync(session.Equipment.SiteLatitude, session.Equipment.SiteLongitude);
+                    if (!string.IsNullOrWhiteSpace(locationName)) {
+                        session.Equipment.SiteName = locationName;
+                    }
+                }
+
                 var calculator = new SessionStatsCalculator();
                 calculator.CalculateStatistics(session);
 
