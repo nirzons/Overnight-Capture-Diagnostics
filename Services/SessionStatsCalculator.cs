@@ -41,6 +41,20 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 session.MasterQualityScore = 100.0;
             }
 
+            // Calculate Storage Size
+            long storage = 0;
+            foreach (var target in session.Targets) {
+                foreach (var frame in target.Frames) {
+                    try {
+                        var fi = new System.IO.FileInfo(frame.FileName);
+                        if (fi.Exists) {
+                            storage += fi.Length;
+                        }
+                    } catch { }
+                }
+            }
+            session.TotalStorageBytes = storage;
+
             // Calculate Environmental & Weather Summaries
             if (session.WeatherSamples.Any()) {
                 session.AmbientTempMin = session.WeatherSamples.Min(w => w.AmbientTemperature);

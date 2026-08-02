@@ -341,6 +341,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 if (scopeSettings.FocalLength > 0 && !double.IsNaN(scopeSettings.FocalLength) && session.Equipment.FocalLengthMm == 0) {
                     session.Equipment.FocalLengthMm = scopeSettings.FocalLength;
                 }
+                
+                if (scopeSettings.FocalRatio > 0 && !double.IsNaN(scopeSettings.FocalRatio) && session.Equipment.ApertureMm == 0) {
+                    session.Equipment.ApertureMm = session.Equipment.FocalLengthMm / scopeSettings.FocalRatio;
+                }
+
                 if (!string.IsNullOrWhiteSpace(scopeSettings.Name) && (string.IsNullOrWhiteSpace(session.Equipment.TelescopeName) || session.Equipment.TelescopeName == "Not Connected")) {
                     session.Equipment.TelescopeName = scopeSettings.Name;
                 }

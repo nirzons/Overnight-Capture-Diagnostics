@@ -56,7 +56,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
                         sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
                     }
-                    sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1} |");
+                    sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                     sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
                     sb.AppendLine($"| **Mount** | {eq.MountName} | Guider: {eq.GuiderName} |");
                     sb.AppendLine($"| **Filter Wheel** | {eq.FilterWheelName} | Active Filters: {session.FiltersUsedFormatted} |");
@@ -72,7 +72,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
                     sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
                 }
-                sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1} |");
+                sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                 sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
                 sb.AppendLine($"| **Mount** | {eq.MountName} | Guider: {eq.GuiderName} |");
                 sb.AppendLine($"| **Filter Wheel** | {eq.FilterWheelName} | Active Filters: {session.FiltersUsedFormatted} |");
@@ -112,7 +112,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine($"- **Last Light Frame Captured:** {lastLightStr}");
             sb.AppendLine($"- **Total Night Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine($"- **Total Overhead Time:** {FormatTimeSpan(TimeSpan.FromSeconds(session.TotalOverheadSeconds))}");
-            sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
+            if (storageGb > 0) {
+                sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
+            }
             sb.AppendLine();
 
             var liveSessionErrors = session.HardwareErrors.Where(err => {

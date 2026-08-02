@@ -9,3 +9,7 @@
   2. `Properties\AssemblyInfo.cs`: Update `[assembly: AssemblyVersion("...")]` and `[assembly: AssemblyFileVersion("...")]`. (N.I.N.A reads the version from here).
   3. `*.csproj`: Update the `<Version>` tag.
   *CRITICAL*: After updating these files, you must run `dotnet build` to ensure the new version is embedded into the generated `.dll`.
+
+## GitHub Actions Release Rules
+- **Untracked Files**: Before pushing a release tag, ALWAYS run `git status` to verify that no new source files are left as untracked. A local build might succeed with untracked files, but the GitHub Actions build will fail with missing context (`CS0103`) because those files are not in the repository.
+- **Multiple .csproj Files (`MSB1011`)**: Do NOT leave temporary or test `.csproj` files in the repository root. GitHub Actions runners using .NET 8 will fail with `MSBUILD : error MSB1011` if there are multiple `.csproj` files when running `dotnet restore` or `dotnet build`. Ensure there is only one primary `.csproj` file in the directory. (Note: `.slnx` files are not natively supported by .NET 8 without preview flags and will be ignored by the runner).

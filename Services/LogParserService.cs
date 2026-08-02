@@ -294,7 +294,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         var mTarget = RegexTargetStart.Match(line);
                         if (mTarget.Success) {
                             string tName = mTarget.Groups["TargetName"].Value.Trim();
-                            if (!string.IsNullOrWhiteSpace(tName) && !tName.StartsWith("*") && !tName.Contains("rotator", StringComparison.OrdinalIgnoreCase) && !tName.Contains("Moving")) {
+                            if (!string.IsNullOrWhiteSpace(tName) && !tName.StartsWith("*") && 
+                                !tName.Contains("rotator", StringComparison.OrdinalIgnoreCase) && 
+                                !tName.Contains("Moving", StringComparison.OrdinalIgnoreCase) &&
+                                !tName.Contains("Duration", StringComparison.OrdinalIgnoreCase) &&
+                                !line.Contains("Cool", StringComparison.OrdinalIgnoreCase)) {
                                 currentTarget = tName;
                             }
                             continue;
@@ -406,7 +410,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             var frame = new FrameRecord {
                                 Timestamp = logTimestamp,
-                                FileName = filename,
+                                FileName = fullPath,
                                 TargetName = frameTarget,
                                 Filter = SanitizeFilterName(frameFilter),
                                 ExposureSeconds = expSecs,
@@ -865,12 +869,31 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     parent.Equals("DARK", StringComparison.OrdinalIgnoreCase) ||
                     parent.Equals("FLAT", StringComparison.OrdinalIgnoreCase) ||
                     parent.Equals("BIAS", StringComparison.OrdinalIgnoreCase)) {
-                    string targetDir = Path.GetDirectoryName(dir) ?? "";
-                    string targetName = Path.GetFileName(targetDir);
-                    if (!string.IsNullOrWhiteSpace(targetName) && 
-                        !targetName.Equals("N.I.N.A", StringComparison.OrdinalIgnoreCase) &&
-                        !Regex.IsMatch(targetName, @"^\d{4}[-_]\d{2}[-_]\d{2}$")) {
-                        return targetName;
+                    
+                    string? currentDir = Path.GetDirectoryName(dir);
+                    while (!string.IsNullOrWhiteSpace(currentDir)) {
+                        string targetName = Path.GetFileName(currentDir);
+                        
+                        if (string.IsNullOrWhiteSpace(targetName) || 
+                            targetName.Equals("N.I.N.A", StringComparison.OrdinalIgnoreCase) ||
+                            targetName.Equals("NINA", StringComparison.OrdinalIgnoreCase)) {
+                            break;
+                        }
+
+                        // Skip folders that are dates (yyyy-mm-dd)
+                        bool isDate = Regex.IsMatch(targetName, @"^\d{4}[-_]\d{2}[-_]\d{2}$");
+                        // Skip folders containing exposure/duration info
+                        bool hasDuration = targetName.Contains("Duration", StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(targetName, @"\d+s", RegexOptions.IgnoreCase);
+                        // Skip folders that are just temperatures (e.g. "-5", "-5C", "-5.0 C")
+                        bool isTemp = Regex.IsMatch(targetName, @"^[-+]?\d+[\.,]?\d*\s*C?$", RegexOptions.IgnoreCase);
+                        // Skip known filter folders if they somehow got in the middle
+                        bool isFilter = new[] { "L", "R", "G", "B", "Ha", "OIII", "SII", "Luminance", "Red", "Green", "Blue", "IRUV" }.Contains(targetName, StringComparer.OrdinalIgnoreCase);
+
+                        if (!isDate && !hasDuration && !isTemp && !isFilter) {
+                            return targetName;
+                        }
+
+                        currentDir = Path.GetDirectoryName(currentDir);
                     }
                 }
             } catch { }
