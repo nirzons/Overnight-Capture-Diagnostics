@@ -26,7 +26,7 @@
     </None>
   </ItemGroup>
 
-  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(CI)' != 'true' AND '$(GITHUB_ACTIONS)' != 'true'">
     <Exec Command="if not exist &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; ( mkdir &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics&quot; )&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.dll&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.pdb&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.deps.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(TargetDir)NirZonshine.NINA.OvernightCaptureDiagnostics.runtimeconfig.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;&#xD;&#xA;xcopy /y &quot;$(ProjectDir)manifest.json&quot; &quot;$(LOCALAPPDATA)\NINA\Plugins\3.0.0\Overnight Capture Diagnostics\&quot;" />
   </Target>
 </Project>
