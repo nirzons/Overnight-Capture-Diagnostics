@@ -76,7 +76,8 @@ This plan outlines the architecture and changes required to implement **Astronom
   - Display `Dark Sky Efficiency`: **`71.5%`** (or `N/A`)
   - Display `Active Duty Cycle`: **`94.3%`**
 - **AutoFocus Table**:
-  - Change column header to **`HFR (Initial → Final | Δ)`**.
+  - In `MarkdownReportWriter.cs`, change column header to **`HFR (Initial → Final \| Δ)`** (escaped pipe `\|` prevents table column splitting).
+  - In `HtmlReportWriter.cs`, change column header to **`HFR (Initial → Final \| Δ)`** or `HFR (Initial → Final | Δ)`.
   - Render rows as `1.99 px → 2.01 px (+0.02 px)`.
 
 ---

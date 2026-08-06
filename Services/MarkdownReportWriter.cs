@@ -252,7 +252,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (target.AutofocusRuns.Any()) {
                     sb.AppendLine("#### 🔍 AutoFocus Diagnostics");
-                    sb.AppendLine("| Timestamp | Filter | Temp | Curve Quality (R²) | HFR (Initial → Final | Δ) | Result |");
+                    sb.AppendLine("| Timestamp | Filter | Temp | Curve Quality (R²) | HFR (Initial → Final \\| Δ) | Result |");
                     sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- |");
                     foreach (var af in target.AutofocusRuns) {
                         string r2Str = af.RSquared > 0 ? $"{af.RSquared:F2}" : "--";
