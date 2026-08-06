@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Template-Driven Telemetry & Sensor Temp Parsing**: Enhanced `NinaFilePatternParserService` to extract sensor temperatures (e.g. `-5.00`), HFR, star counts, and RMS directly from N.I.N.A. `$$SENSORTEMP$$` file pattern tags, fallback candidate templates, and raw decimal formats.
+- **Reverse Geocoding Fallbacks**: Expanded OpenStreetMap location name parsing to fall back to regional councils, counties, hamlets, and local district names (e.g., "Hevel Modiin Regional Council, Israel") when city/town names are absent for rural observatory sites.
 - **Image Path Parsing Debug Logs**: Added detailed `[OCD Debug]` logging entries for image file path pattern matching and extracted telemetry values when debug logging mode is enabled.
 
 ## [v1.0.3.0] - 2026-08-01

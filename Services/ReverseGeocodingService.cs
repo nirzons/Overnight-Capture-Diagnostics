@@ -43,7 +43,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                    ?? (string)address["town"] 
                                    ?? (string)address["village"] 
                                    ?? (string)address["suburb"] 
-                                   ?? (string)address["municipality"];
+                                   ?? (string)address["municipality"]
+                                   ?? (string)address["region"]
+                                   ?? (string)address["county"]
+                                   ?? (string)address["hamlet"]
+                                   ?? (string)address["locality"]
+                                   ?? (string)address["isolated_dwelling"];
                         
                         string country = (string)address["country"];
 
