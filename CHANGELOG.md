@@ -5,6 +5,14 @@ All notable changes to the **Overnight Capture Diagnostics** plugin for N.I.N.A.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.5.0] - 2026-08-06
+
+### Added
+- **Astronomical Darkness & Solar Position Engine**: Integrated NOAA solar calculation engine (`AstroUtils.cs`) anchored to 12:00 PM (noon) to calculate exact `AstroDusk` and `AstroDawn` timestamps. Includes Tiered Twilight Fallback (Nautical/Civil) for high latitudes during summer solstice.
+- **Dark Sky Efficiency Metric ($E_{\text{dark}}$)**: Introduced sub-frame overlap clipping to compute exact integration efficiency against true dark sky duration, eliminating early startup and late parking time penalties.
+- **Active Imaging Duty Cycle ($D_{\text{imaging}}$)**: Added sequence tightness metric comparing total integration against active imaging span (first frame start to last frame end).
+- **Signed AutoFocus Delta Formatting**: Refactored AutoFocus table headers to `HFR (Initial → Final | Δ)` and replaced generic labels with signed deltas (e.g., `+0.02 px`, `-0.07 px`, `0.00 px`).
+
 ## [v1.0.4.0] - 2026-08-06
 
 ### Fixed

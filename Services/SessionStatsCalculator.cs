@@ -6,7 +6,7 @@ using NirZonshine.NINA.OvernightCaptureDiagnostics.Models;
 namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
     public class SessionStatsCalculator {
 
-        public void CalculateStatistics(SessionData session) {
+        public void CalculateStatistics(SessionData session, bool enableDebugLogging = false) {
             double totalNightIntegration = 0;
 
             foreach (var target in session.Targets) {
@@ -20,6 +20,82 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             if (session.SessionEnd > session.SessionStart) {
                 double totalSecs = (session.SessionEnd - session.SessionStart).TotalSeconds;
                 session.TotalOverheadSeconds = Math.Max(0, totalSecs - totalNightIntegration);
+            }
+
+            // Calculate Active Imaging Duty Cycle
+            var allLightFrames = session.Targets
+                .SelectMany(t => t.Frames.Where(f => !f.IsCalibrationFrame))
+                .OrderBy(f => f.Timestamp)
+                .ToList();
+
+            if (allLightFrames.Any()) {
+                var firstLightStart = allLightFrames.First().Timestamp;
+                var lastLightEnd = allLightFrames.Max(f => f.Timestamp.AddSeconds(f.ExposureSeconds));
+                double activeSpanSeconds = (lastLightEnd - firstLightStart).TotalSeconds;
+                if (activeSpanSeconds > 0) {
+                    session.ImagingDutyCycle = (session.TotalNightIntegrationSeconds / activeSpanSeconds) * 100.0;
+                } else {
+                    session.ImagingDutyCycle = 0;
+                }
+                if (enableDebugLogging) {
+                    global::NINA.Core.Utility.Logger.Info($"[OCD Debug] Active Imaging Duty Cycle: {session.ImagingDutyCycle:F1}% (Integration: {session.TotalNightIntegrationSeconds:F0}s, Active Span: {activeSpanSeconds:F0}s)");
+                }
+            } else {
+                session.ImagingDutyCycle = 0;
+            }
+
+            // Calculate Astronomical Darkness & Dark Sky Efficiency
+            double lat = session.Equipment.SiteLatitude;
+            double lon = session.Equipment.SiteLongitude;
+
+            if (Math.Abs(lat) < 0.0001 && Math.Abs(lon) < 0.0001) {
+                session.AstroDusk = null;
+                session.AstroDawn = null;
+                session.AstroDarknessDuration = TimeSpan.Zero;
+                session.AstroDarknessEfficiency = null;
+                session.UsedNauticalFallback = false;
+                if (enableDebugLogging) {
+                    global::NINA.Core.Utility.Logger.Info("[OCD Debug] AstroUtils: Site coordinates (0,0) / missing GPS. Skipping Astronomical Darkness calculation.");
+                }
+            } else {
+                DateTime astroAnchorStart = session.SessionStart != default ? session.SessionStart : (allLightFrames.Any() ? allLightFrames.First().Timestamp : DateTime.Now);
+                var window = AstroUtils.GetAstronomicalNightWindow(astroAnchorStart, lat, lon);
+                session.AstroDusk = window.Dusk;
+                session.AstroDawn = window.Dawn;
+                session.AstroDarknessDuration = window.Duration;
+                session.UsedNauticalFallback = window.UsedNauticalFallback;
+
+                if (enableDebugLogging) {
+                    string duskStr = window.Dusk.HasValue ? window.Dusk.Value.ToString("HH:mm:ss") : "N/A";
+                    string dawnStr = window.Dawn.HasValue ? window.Dawn.Value.ToString("HH:mm:ss") : "N/A";
+                    global::NINA.Core.Utility.Logger.Info($"[OCD Debug] AstroUtils: Anchor Date={astroAnchorStart:yyyy-MM-dd HH:mm}, Dusk={duskStr}, Dawn={dawnStr}, Duration={window.Duration}, Nautical Fallback={window.UsedNauticalFallback}, Target Altitude={window.TargetSunAltitude}°");
+                }
+
+                if (window.Dusk.HasValue && window.Dawn.HasValue && window.Duration.TotalSeconds > 0 && allLightFrames.Any()) {
+                    long duskTicks = window.Dusk.Value.Ticks;
+                    long dawnTicks = window.Dawn.Value.Ticks;
+                    double totalClippedSeconds = 0;
+
+                    foreach (var f in allLightFrames) {
+                        long fStart = f.Timestamp.Ticks;
+                        long fEnd = f.Timestamp.AddSeconds(f.ExposureSeconds).Ticks;
+                        long clipStart = Math.Max(fStart, duskTicks);
+                        long clipEnd = Math.Min(fEnd, dawnTicks);
+                        long overlap = Math.Max(0, clipEnd - clipStart);
+                        totalClippedSeconds += overlap / (double)TimeSpan.TicksPerSecond;
+                    }
+
+                    session.AstroDarknessEfficiency = Math.Min(100.0, (totalClippedSeconds / window.Duration.TotalSeconds) * 100.0);
+
+                    if (enableDebugLogging) {
+                        global::NINA.Core.Utility.Logger.Info($"[OCD Debug] Dark Sky Efficiency: {session.AstroDarknessEfficiency.Value:F1}% ({totalClippedSeconds:F0}s clipped dark integration / {window.Duration.TotalSeconds:F0}s dark sky window)");
+                    }
+                } else {
+                    session.AstroDarknessEfficiency = null;
+                    if (enableDebugLogging) {
+                        global::NINA.Core.Utility.Logger.Info("[OCD Debug] Dark Sky Efficiency: Set to N/A (No valid dark sky window or no light frames).");
+                    }
+                }
             }
 
             // Calculate Thermal Focus Slope (Steps / °C) across all AF runs

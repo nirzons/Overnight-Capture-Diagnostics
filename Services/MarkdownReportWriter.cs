@@ -29,12 +29,21 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.5.0";
+
+            string duskDawnBanner = (session.AstroDusk.HasValue && session.AstroDawn.HasValue)
+                ? $"{session.AstroDusk.Value:HH:mm} — {session.AstroDawn.Value:HH:mm} ({FormatTimeSpan(session.AstroDarknessDuration)})"
+                : "N/A";
+            string nightLabel = session.UsedNauticalFallback ? "Nautical Night Window" : "Astro Night Window";
+            string darkEfficiencyBanner = session.AstroDarknessEfficiency.HasValue
+                ? $"**{session.AstroDarknessEfficiency.Value:F1}%**"
+                : "N/A (GPS Required)";
+            string dutyCycleBanner = $"**{session.ImagingDutyCycle:F1}%**";
 
             sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report {versionStr} ({analysisType})");
             sb.AppendLine($"> **Plugin Version:** {versionStr} | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
-            sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr}");
-            sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
+            sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr} | **{nightLabel}:** {duskDawnBanner}");
+            sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} | **Dark Sky Efficiency:** {darkEfficiencyBanner} | **Active Duty Cycle:** {dutyCycleBanner}");
             sb.AppendLine();
             sb.AppendLine("---");
             sb.AppendLine();
@@ -113,7 +122,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine($"- **Session Execution Window:** {startStr} — {endStr} (Total Elapsed: {elapsedStr})");
             sb.AppendLine($"- **First Light Frame Captured:** {firstLightStr}");
             sb.AppendLine($"- **Last Light Frame Captured:** {lastLightStr}");
-            sb.AppendLine($"- **Total Night Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
+            if (session.AstroDusk.HasValue && session.AstroDawn.HasValue) {
+                sb.AppendLine($"- **{nightLabel}:** {duskDawnBanner}");
+            }
+            sb.AppendLine($"- **Total Night Integration:** {integrationStr}");
+            sb.AppendLine($"- **Dark Sky Efficiency:** {darkEfficiencyBanner} (Integration within Dark Sky / Dark Sky Duration)");
+            sb.AppendLine($"- **Active Imaging Duty Cycle:** {dutyCycleBanner} (Integration / Active Imaging Span)");
             sb.AppendLine($"- **Total Overhead Time:** {FormatTimeSpan(TimeSpan.FromSeconds(session.TotalOverheadSeconds))}");
             if (storageGb > 0) {
                 sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
@@ -238,7 +252,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (target.AutofocusRuns.Any()) {
                     sb.AppendLine("#### 🔍 AutoFocus Diagnostics");
-                    sb.AppendLine("| Timestamp | Filter | Temp | Curve Quality (R²) | HFR Change (Initial → Final) | Result |");
+                    sb.AppendLine("| Timestamp | Filter | Temp | Curve Quality (R²) | HFR (Initial → Final | Δ) | Result |");
                     sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- |");
                     foreach (var af in target.AutofocusRuns) {
                         string r2Str = af.RSquared > 0 ? $"{af.RSquared:F2}" : "--";
@@ -246,13 +260,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         
                         string hfrChange = "--";
                         if (af.HfrBefore > 0 && af.HfrAfter > 0) {
-                            double diff = af.HfrBefore - af.HfrAfter;
-                            if (Math.Abs(diff) < 0.01) {
-                                hfrChange = $"{af.HfrBefore:F2} px → {af.HfrAfter:F2} px (No Change)";
-                            } else {
-                                string dir = diff > 0 ? "Impr" : "Degr";
-                                hfrChange = $"{af.HfrBefore:F2} px → {af.HfrAfter:F2} px ({Math.Abs(diff):F2} px {dir})";
-                            }
+                            hfrChange = $"{af.HfrBefore:F2} px → {af.HfrAfter:F2} px ({af.HfrDeltaString})";
                         }
                         
                         sb.AppendLine($"| {af.Timestamp:HH:mm:ss} | {af.Filter} | {af.Temperature:F1}°C | {r2Str} | {hfrChange} | {status} |");

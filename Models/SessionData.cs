@@ -80,6 +80,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double TotalOverheadSeconds { get; set; }
         public double ImagingEfficiencyPercent => TotalSessionDuration.TotalSeconds > 0 ? (TotalNightIntegrationSeconds / TotalSessionDuration.TotalSeconds) * 100.0 : 0;
 
+        public DateTime? AstroDusk { get; set; }
+        public DateTime? AstroDawn { get; set; }
+        public TimeSpan AstroDarknessDuration { get; set; }
+        public double? AstroDarknessEfficiency { get; set; }
+        public double ImagingDutyCycle { get; set; }
+        public bool UsedNauticalFallback { get; set; }
+
         public double MasterQualityScore { get; set; }
         public double ThermalFocusSlopeStepsPerDegree { get; set; } // Focuser steps / °C
 

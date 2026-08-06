@@ -60,19 +60,29 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine("  <div class=\"container\">");
 
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.5.0";
+
+            string duskDawnBanner = (session.AstroDusk.HasValue && session.AstroDawn.HasValue)
+                ? $"{session.AstroDusk.Value:HH:mm} — {session.AstroDawn.Value:HH:mm} ({FormatTimeSpan(session.AstroDarknessDuration)})"
+                : "N/A";
+            string nightLabel = session.UsedNauticalFallback ? "Nautical Night Window" : "Astro Night Window";
+            string darkEfficiencyBanner = session.AstroDarknessEfficiency.HasValue
+                ? $"{session.AstroDarknessEfficiency.Value:F1}%"
+                : "N/A (GPS Required)";
+            string dutyCycleBanner = $"{session.ImagingDutyCycle:F1}%";
 
             // Header Section
             sb.AppendLine("    <div class=\"header\">");
             sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">{versionStr}</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
             sb.AppendLine($"      <div class=\"meta\">");
             sb.AppendLine($"        <strong>Plugin Version:</strong> {versionStr} &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
-            sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
+            sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>{nightLabel}:</strong> {duskDawnBanner} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
             sb.AppendLine($"      </div>");
             sb.AppendLine("      <div>");
             sb.AppendLine($"        <span class=\"score-badge\">🌟 Night Score: {session.MasterQualityScore:F0} / 100</span>");
             sb.AppendLine($"        <span style=\"color: #10B981; font-weight: bold; margin-right: 16px;\">Integration: {integrationStr}</span>");
-            sb.AppendLine($"        <span style=\"color: #38BDF8; font-weight: bold;\">Total Elapsed: {elapsedStr}</span>");
+            sb.AppendLine($"        <span style=\"color: #38BDF8; font-weight: bold; margin-right: 16px;\">Dark Sky Efficiency: {darkEfficiencyBanner}</span>");
+            sb.AppendLine($"        <span style=\"color: #A78BFA; font-weight: bold;\">Active Duty Cycle: {dutyCycleBanner}</span>");
             sb.AppendLine("      </div>");
             sb.AppendLine("    </div>");
 
@@ -279,7 +289,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 if (target.AutofocusRuns.Any()) {
                     sb.AppendLine("      <h3>🔍 AutoFocus Diagnostics</h3>");
                     sb.AppendLine("      <table>");
-                    sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Filter</th><th>Temp</th><th>Curve Quality (R²)</th><th>HFR Change (Initial → Final)</th><th>Result</th></tr></thead>");
+                    sb.AppendLine("        <thead><tr><th>Timestamp</th><th>Filter</th><th>Temp</th><th>Curve Quality (R²)</th><th>HFR (Initial &rarr; Final | &Delta;)</th><th>Result</th></tr></thead>");
                     sb.AppendLine("        <tbody>");
                     foreach (var af in target.AutofocusRuns) {
                         string r2Str = af.RSquared > 0 ? $"{af.RSquared:F2}" : "--";
@@ -287,14 +297,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         
                         string hfrChange = "--";
                         if (af.HfrBefore > 0 && af.HfrAfter > 0) {
-                            double diff = af.HfrBefore - af.HfrAfter;
-                            if (Math.Abs(diff) < 0.01) {
-                                hfrChange = $"{af.HfrBefore:F2} px &rarr; {af.HfrAfter:F2} px (No Change)";
-                            } else {
-                                string dir = diff > 0 ? "Impr" : "Degr";
-                                string diffColor = diff > 0 ? "#10B981" : "#EF4444";
-                                hfrChange = $"{af.HfrBefore:F2} px &rarr; {af.HfrAfter:F2} px (<span style=\"color: {diffColor};\">{Math.Abs(diff):F2} px {dir}</span>)";
-                            }
+                            double diff = af.HfrAfter - af.HfrBefore;
+                            string deltaColor = Math.Abs(diff) < 0.005 ? "#94A3B8" : (diff < 0 ? "#10B981" : "#EF4444");
+                            hfrChange = $"{af.HfrBefore:F2} px &rarr; {af.HfrAfter:F2} px (<span style=\"color: {deltaColor};\">{af.HfrDeltaString}</span>)";
                         }
                         
                         sb.AppendLine($"          <tr><td>{af.Timestamp:HH:mm:ss}</td><td>{af.Filter}</td><td>{af.Temperature:F1}°C</td><td>{r2Str}</td><td>{hfrChange}</td><td>{status}</td></tr>");

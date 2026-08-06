@@ -273,7 +273,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 }
 
                 var calculator = new SessionStatsCalculator();
-                calculator.CalculateStatistics(session);
+                calculator.CalculateStatistics(session, EnableDebugLogging);
 
                 var chartService = new SvgChartGeneratorService();
                 string timestampStr = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");

@@ -832,7 +832,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
 
             var calc = new SessionStatsCalculator();
-            calc.CalculateStatistics(sessionData);
+            calc.CalculateStatistics(sessionData, enableDebugLogging);
 
             return sessionData;
         }
