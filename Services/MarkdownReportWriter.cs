@@ -28,8 +28,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string firstLightStr = session.FirstLightTimestamp.HasValue ? session.FirstLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
-            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report v1.0.3.0 ({analysisType})");
-            sb.AppendLine($"> **Plugin Version:** v1.0.3.0 | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
+
+            sb.AppendLine($"# 🔭 Overnight Capture Diagnostics Report {versionStr} ({analysisType})");
+            sb.AppendLine($"> **Plugin Version:** {versionStr} | **Session Date:** {session.SessionStart:yyyy-MM-dd} | **Session Start:** {startStr} | **Session End:** {endStr} (**Span:** {elapsedStr})");
             sb.AppendLine($"> **First Light Captured:** {firstLightStr} | **Last Light Captured:** {lastLightStr}");
             sb.AppendLine($"> **Site:** {siteInfo} | **Night Score:** 🌟 **{session.MasterQualityScore:F0} / 100** | **Total Integration:** {integrationStr} (**{session.ImagingEfficiencyPercent:F1}% Efficiency**)");
             sb.AppendLine();

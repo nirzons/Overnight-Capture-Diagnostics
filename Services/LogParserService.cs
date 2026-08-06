@@ -19,7 +19,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex RegexFilterChange = new Regex(
-            @"(?:Filter change to|Filter changed to|Changed filter to|Setting filter to|, Filter:\s*)(?<Filter>[^,\r\n;|]+)",
+            @"(?:Filter change to|Filter changed to|Changed filter to|Setting filter to)(?:\s*:?\s*)(?<Filter>[^,\r\n;|]+)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex RegexDitherStart = new Regex(
@@ -284,7 +284,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         var mFiltChange = RegexFilterChange.Match(line);
                         if (mFiltChange.Success) {
                             string parsedFilt = mFiltChange.Groups["Filter"].Value.Trim();
-                            if (!string.IsNullOrWhiteSpace(parsedFilt)) {
+                            if (!string.IsNullOrWhiteSpace(parsedFilt) &&
+                                parsedFilt.Length <= 30 &&
+                                !parsedFilt.Contains("telescope reports", StringComparison.OrdinalIgnoreCase) &&
+                                !parsedFilt.Contains("pier side", StringComparison.OrdinalIgnoreCase) &&
+                                !parsedFilt.Contains("Automated Flip", StringComparison.OrdinalIgnoreCase) &&
+                                !parsedFilt.Contains("Condition", StringComparison.OrdinalIgnoreCase) &&
+                                !parsedFilt.Contains("Item:", StringComparison.OrdinalIgnoreCase)) {
                                 currentFilter = parsedFilt;
                             }
                             continue;
@@ -375,15 +381,15 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             seenFrameKeys.Add(fullPath);
 
-                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk(overrideLogDir);
-                            var dynamicTelem = NinaFilePatternParserService.ParsePathWithPattern(fullPath, ninaPattern);
+                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk(overrideLogDir, enableDebugLogging);
+                            var dynamicTelem = NinaFilePatternParserService.ParsePathWithPattern(fullPath, ninaPattern, enableDebugLogging);
 
                             double expSecs, hfr, parsedRms;
                             int stars;
                             string parsedFilter, inlineTarget;
                             double? sensorTemp = null;
 
-                            if (dynamicTelem.IsSuccess && (dynamicTelem.HFR > 0 || dynamicTelem.StarCount > 0)) {
+                            if (dynamicTelem.IsSuccess && (dynamicTelem.HFR > 0 || dynamicTelem.StarCount > 0 || dynamicTelem.SensorTemp.HasValue)) {
                                 expSecs = dynamicTelem.ExposureSeconds;
                                 hfr = dynamicTelem.HFR;
                                 stars = dynamicTelem.StarCount;
@@ -1030,6 +1036,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         private static string SanitizeFilterName(string val) {
             if (string.IsNullOrWhiteSpace(val)) return "No Filter";
             if (val.Equals("LIGHT", StringComparison.OrdinalIgnoreCase)) return "No Filter";
+            if (val.Length > 30 ||
+                val.Contains("telescope reports", StringComparison.OrdinalIgnoreCase) ||
+                val.Contains("pier side", StringComparison.OrdinalIgnoreCase) ||
+                val.Contains("Automated Flip", StringComparison.OrdinalIgnoreCase) ||
+                val.Contains("Condition", StringComparison.OrdinalIgnoreCase) ||
+                val.Contains("Item:", StringComparison.OrdinalIgnoreCase)) {
+                return "No Filter";
+            }
             return val;
         }
 

@@ -56,39 +56,64 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             });
         }
 
-        public static ParsedTelemetry ParsePathWithPattern(string fullPath, string ninaPattern) {
+        public static ParsedTelemetry ParsePathWithPattern(string fullPath, string ninaPattern, bool enableDebugLogging = false) {
             var result = new ParsedTelemetry();
-            if (string.IsNullOrWhiteSpace(fullPath) || string.IsNullOrWhiteSpace(ninaPattern)) return result;
+            if (string.IsNullOrWhiteSpace(fullPath)) return result;
 
-            try {
-                var regex = CompilePatternRegex(ninaPattern);
-                var match = regex.Match(fullPath);
+            Action<string> logDebug = (msg) => {
+                if (enableDebugLogging) global::NINA.Core.Utility.Logger.Info($"[OCD Debug] ImagePathParser: {msg}");
+            };
 
-                if (match.Success) {
-                    result.IsSuccess = true;
-                    if (match.Groups["TargetName"].Success) result.TargetName = match.Groups["TargetName"].Value.Trim();
-                    if (match.Groups["Filter"].Success) result.Filter = match.Groups["Filter"].Value.Trim();
+            var patternsToTry = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ninaPattern)) {
+                patternsToTry.Add(ninaPattern);
+            }
 
-                    if (match.Groups["Exposure"].Success && double.TryParse(match.Groups["Exposure"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var expVal)) {
-                        result.ExposureSeconds = expVal;
+            // Built-in candidate N.I.N.A patterns to fallback to if custom pattern is missing or un-matched
+            patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$__$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$TARGETNAME$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_-$$SENSORTEMP$$C_$$EXPOSURETIME$$s_$$STARCOUNT$$STARS_$$HFR$$HFR_$$RMS$$RMS_$$FRAMENR$$");
+            patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_$$EXPOSURETIME$$s_GAIN$$GAIN$$_TEMP$$SENSORTEMP$$_HFR$$HFR$$_$$STARCOUNT$$STARS_RMS$$RMS$$_$$FRAMENR$$");
+            patternsToTry.Add(@"$$DATETIME$$_$$FILTER$$_$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$HFR$$_$$TARGETNAME$$_$$RMS$$");
+
+            foreach (var pat in patternsToTry) {
+                try {
+                    var regex = CompilePatternRegex(pat);
+                    var match = regex.Match(fullPath);
+
+                    if (match.Success) {
+                        result.IsSuccess = true;
+                        if (match.Groups["TargetName"].Success) result.TargetName = match.Groups["TargetName"].Value.Trim();
+                        if (match.Groups["Filter"].Success) result.Filter = match.Groups["Filter"].Value.Trim();
+
+                        if (match.Groups["Exposure"].Success && double.TryParse(match.Groups["Exposure"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var expVal)) {
+                            result.ExposureSeconds = expVal;
+                        }
+                        if (match.Groups["HFR"].Success && double.TryParse(match.Groups["HFR"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var hfrVal)) {
+                            result.HFR = hfrVal;
+                        }
+                        if (match.Groups["StarCount"].Success && int.TryParse(match.Groups["StarCount"].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var starVal)) {
+                            result.StarCount = starVal;
+                        }
+                        if (match.Groups["RMS"].Success && double.TryParse(match.Groups["RMS"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var rmsVal)) {
+                            result.RMS = rmsVal;
+                        }
+                        if (match.Groups["SensorTemp"].Success && double.TryParse(match.Groups["SensorTemp"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var tempVal)) {
+                            result.SensorTemp = tempVal;
+                        }
+                        if (match.Groups["Gain"].Success && double.TryParse(match.Groups["Gain"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var gainVal)) {
+                            result.Gain = gainVal;
+                        }
+                        if (result.HFR > 0 || result.StarCount > 0 || result.SensorTemp.HasValue) {
+                            logDebug($"Successfully matched '{Path.GetFileName(fullPath)}' using pattern '{pat}' -> Target: '{result.TargetName}', Filter: '{result.Filter}', Temp: {result.SensorTemp?.ToString("F2") ?? "N/A"}°C, Exp: {result.ExposureSeconds}s, Stars: {result.StarCount}, HFR: {result.HFR:F2}, RMS: {result.RMS:F2}");
+                            break;
+                        }
                     }
-                    if (match.Groups["HFR"].Success && double.TryParse(match.Groups["HFR"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var hfrVal)) {
-                        result.HFR = hfrVal;
-                    }
-                    if (match.Groups["StarCount"].Success && int.TryParse(match.Groups["StarCount"].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var starVal)) {
-                        result.StarCount = starVal;
-                    }
-                    if (match.Groups["RMS"].Success && double.TryParse(match.Groups["RMS"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var rmsVal)) {
-                        result.RMS = rmsVal;
-                    }
-                    if (match.Groups["SensorTemp"].Success && double.TryParse(match.Groups["SensorTemp"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var tempVal)) {
-                        result.SensorTemp = tempVal;
-                    }
-                    if (match.Groups["Gain"].Success && double.TryParse(match.Groups["Gain"].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var gainVal)) {
-                        result.Gain = gainVal;
-                    }
-                }
-            } catch { }
+                } catch { }
+            }
+
+            if (!result.IsSuccess && enableDebugLogging) {
+                logDebug($"No template pattern matched file '{Path.GetFileName(fullPath)}'. Using fallback token parser.");
+            }
 
             return result;
         }
@@ -96,7 +121,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         /// <summary>
         /// Attempts to discover active pattern from N.I.N.A profile files on disk if not provided via live plugin profile service.
         /// </summary>
-        public static string DiscoverPatternFromDisk(string overrideProfileDir = null) {
+        public static string DiscoverPatternFromDisk(string overrideProfileDir = null, bool enableDebugLogging = false) {
             try {
                 string profilesDir = overrideProfileDir;
                 if (string.IsNullOrEmpty(profilesDir)) {
@@ -111,7 +136,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     foreach (var file in profileFiles) {
                         if (file.LastWriteTime > latestTime) {
                             string text = File.ReadAllText(file.FullName);
-                            var m = Regex.Match(text, @"<FilePattern>(?<Pattern>[^<]+)</FilePattern>", RegexOptions.IgnoreCase);
+                            var m = Regex.Match(text, @"<(?:ImageFilePattern|FilePattern|Pattern)>(?<Pattern>[^<]+)</(?:ImageFilePattern|FilePattern|Pattern)>", RegexOptions.IgnoreCase);
                             if (m.Success) {
                                 activePattern = m.Groups["Pattern"].Value;
                                 latestTime = file.LastWriteTime;

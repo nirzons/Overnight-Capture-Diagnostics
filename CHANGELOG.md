@@ -5,6 +5,15 @@ All notable changes to the **Overnight Capture Diagnostics** plugin for N.I.N.A.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.4.0] - 2026-08-06
+
+### Fixed
+- **Filter Wheel Parsing**: Tightened filter regex and added string validation to prevent N.I.N.A. sequence condition lines (e.g., `pierWest` / `Automated Flip`) from corrupting filter wheel data on rigs without a filter wheel.
+
+### Added
+- **Template-Driven Telemetry & Sensor Temp Parsing**: Enhanced `NinaFilePatternParserService` to extract sensor temperatures (e.g. `-5.00`), HFR, star counts, and RMS directly from N.I.N.A. `$$SENSORTEMP$$` file pattern tags, fallback candidate templates, and raw decimal formats.
+- **Image Path Parsing Debug Logs**: Added detailed `[OCD Debug]` logging entries for image file path pattern matching and extracted telemetry values when debug logging mode is enabled.
+
 ## [v1.0.3.0] - 2026-08-01
 
 ### Added

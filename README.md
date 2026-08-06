@@ -40,7 +40,9 @@ If you need to install the plugin manually from a custom compiled build or on an
 
 - **Automated Sequencer Instruction**: Simply drop the **`[OCD] Overnight Capture Diagnostics`** instruction item into your Advanced Sequencer container (typically at the very end of your sequence after parking your scope).
 - **24-Hour Astronomical Observing Window**: Live Session mode automatically calculates the strict 24-hour observing window (**12:00 PM noon to 12:00 PM noon next day**) to strictly isolate last night's imaging session without accumulating previous nights' logs. Historic mode scans from 12:00 PM on the requested date to 12:00 PM the following day.
-- **N.I.N.A. 3.2 & Modern Filename Telemetry Extraction**: Seamlessly parses `.fits`, `.fit`, `.tif`, and `.xisf` image save paths (handling N.I.N.A 3.2 duration metadata extensions). Automatically extracts `HFR`, `Star Count`, `Filter`, `Gain`, `Sensor Temp`, and `Guiding RMS` (e.g., `RMS0.24`) directly from image filenames when standalone PHD2 log files are absent.
+- **N.I.N.A. 3.2 & Modern Filename Telemetry Extraction**: Dynamic template-driven parsing of N.I.N.A.`$$TAG$$` file save patterns (`$$SENSORTEMP$$`, `$$EXPOSURETIME$$`, `$$HFR$$`, `$$STARCOUNT$$`, `$$RMS$$`, `$$FILTER$$`, `$$TARGETNAME$$`) across `.fits`, `.fit`, `.tif`, and `.xisf` images. Accurately extracts signed sensor temperatures (e.g. `-5.00°C`) without requiring `"C"` or `"TEMP"` prefixes.
+- **Single Execution Summary Logging**: Logs a clean, versioned execution summary entry (e.g. `[Overnight Capture Diagnostics v1.0.4.0] Created Live report 'OCD_Report_...html'. Debug Mode: Disabled`) into N.I.N.A.'s log file on every run, regardless of debug setting.
+- **Filter Wheel Verification**: Strict validation prevents sequencer condition logs (`pierWest`, `Automated Flip`) from corrupting filter wheel metadata on rigs without a physical filter wheel.
 - **Multi-Session & Multi-Equipment Profile Support**: Seamlessly handles N.I.N.A process restarts within a single night. Automatically organizes the report into distinct sub-sessions (`Sub-Session 1`, `Sub-Session 2`) with separate equipment tables detailing camera models, focal lengths, pixel scales, and true Field of View (FOV).
 - **Offline Sensor Resolution Lookup**: Includes a built-in sensor fallback database for popular astronomy cameras (e.g., IMX462, IMX533, IMX605, IMX571/2600, IMX294, KASI1600, IMX183, IMX455/6200), ensuring accurate FOV and pixel scale calculations even when drivers are offline or disconnected.
 - **Session Execution Window vs. Light Capture Telemetry**: Explicitly reports both the full N.I.N.A execution span (`SessionStart` — `SessionEnd`) and the exact **First Light Captured** — **Last Light Captured** timestamps.
@@ -134,8 +136,8 @@ The OCD plugin codebase is structured into clean, decoupled layers:
    - `TargetSessionData.cs`: Per-target statistics container (`HFR`, `Star Count`, `RMS`, `Anomalies`).
    - `EquipmentDetails.cs` & `EquipmentProfileRecord.cs`: Hardware profile records and optical calculation properties.
    - `MeridianFlipRecord.cs`, `PolarAlignmentRecord.cs`, `FrameRecord.cs`: Fine-grained telemetry records.
-2. **Log Ingestion & Parsing Engine (`Services/LogParserService.cs`)**:
-   - Performs chronological multi-log ingestion, regex telemetry extraction, pier-side transition tracking, and sensor resolution fallback lookups.
+2. **Log Ingestion & File Pattern Parsing Engine (`Services/LogParserService.cs` & `Services/NinaFilePatternParserService.cs`)**:
+   - Performs chronological multi-log ingestion, template-driven N.I.N.A tag pattern matching (`$$SENSORTEMP$$`, `$$EXPOSURETIME$$`, `$$STARCOUNT$$`, `$$HFR$$`, `$$RMS$$`), regex telemetry extraction, pier-side transition tracking, and sensor resolution fallback lookups.
 3. **Statistics & Anomaly Engine (`Services/SessionStatsCalculator.cs`)**:
    - Handles downsampling, Z-score anomaly detection, 30-minute pre/post flip impact analysis, pixel-to-arcsecond RMS conversion, and star count statistics.
 4. **SVG Vector Chart Generator (`Services/SvgChartGeneratorService.cs`)**:

@@ -59,11 +59,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine("<body>");
             sb.AppendLine("  <div class=\"container\">");
 
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
+
             // Header Section
             sb.AppendLine("    <div class=\"header\">");
-            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">v1.0.3.0</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
+            sb.AppendLine($"      <h1>🔭 Overnight Capture Diagnostics <span class=\"mode-tag\">{versionStr}</span> <span class=\"mode-tag\">{analysisType}</span></h1>");
             sb.AppendLine($"      <div class=\"meta\">");
-            sb.AppendLine($"        <strong>Plugin Version:</strong> v1.0.3.0 &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
+            sb.AppendLine($"        <strong>Plugin Version:</strong> {versionStr} &nbsp;|&nbsp; <strong>Session Date:</strong> {session.SessionStart:yyyy-MM-dd} &nbsp;|&nbsp; <strong>Session Window:</strong> {startStr} — {endStr} (Span: {elapsedStr})<br>");
             sb.AppendLine($"        <strong>First Light Captured:</strong> {firstLightStr} &nbsp;|&nbsp; <strong>Last Light Captured:</strong> {lastLightStr} &nbsp;|&nbsp; <strong>Site:</strong> {siteInfo}");
             sb.AppendLine($"      </div>");
             sb.AppendLine("      <div>");

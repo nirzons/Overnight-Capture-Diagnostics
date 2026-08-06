@@ -222,13 +222,18 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
 
                 bool hasData = session != null && session.Targets != null && session.Targets.Any(t => t.Frames != null && t.Frames.Count > 0);
 
+                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
+
                 if (!hasData) {
                     string logsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NINA", "Logs");
                     string detailedError = isLive
                         ? $"Report generation skipped: No valid capture session telemetry found in log files inside '{logsFolder}'."
                         : $"Report generation skipped: No log files or valid capture telemetry found matching session date '{TargetSessionDate}' inside '{logsFolder}'.";
 
-                    Logger.Error($"[Overnight Capture Diagnostics] {detailedError}");
+                    string debugState = EnableDebugLogging ? "Enabled" : "Disabled";
+                    string sessionType = isLive ? "Live" : "Historic";
+                    Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. No report was created (No session data found). Session Type: {sessionType}, Debug Mode: {debugState}.");
 
                     string userNotice = isLive
                         ? "Overnight Capture Diagnostics: No active or recent capture session logs found."
@@ -295,6 +300,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                     var webhook = new WebhookService();
                     await webhook.PostDiscordSummary(DiscordWebhookUrl, session);
                 }
+
+                string reportFileName = !string.IsNullOrEmpty(htmlPath) 
+                    ? Path.GetFileName(htmlPath) 
+                    : (GenerateMarkdown ? $"OCD_Report_{timestampStr}.md" : $"OCD_Report_{timestampStr}");
+                string activeDebugState = EnableDebugLogging ? "Enabled" : "Disabled";
+                string activeSessionType = isLive ? "Live" : "Historic";
+
+                Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. Created {activeSessionType} report '{reportFileName}' in '{targetDir}'. Debug Mode: {activeDebugState}.");
 
                 CurrentReadout = "Complete";
                 progress.Report(new ApplicationStatus { Status = "OCD: Report Generated Successfully!" });
