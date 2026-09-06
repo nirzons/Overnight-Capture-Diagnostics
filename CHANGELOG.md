@@ -5,6 +5,13 @@ All notable changes to the **Overnight Capture Diagnostics** plugin for N.I.N.A.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.6.4] - 2026-09-06
+
+### Added
+- **Location Privacy Controls**: Added a "Resolve Location" sequencer checkbox (disabled by default) to prevent automated outbound OpenStreetMap network requests and protect rig location privacy.
+- **Custom Location Label**: Added a configurable "Location Name" field in the sequencer block allowing users to specify a custom label (e.g., "Home", "Texas", "Dark Sky Site") when online geocoding is disabled.
+- **Strict Coordinate Redaction**: Completely removed exact GPS coordinates (latitude/longitude) from report executive summaries across both Markdown and HTML diagnostic reports, displaying only the sanitized site name.
+
 ## [v1.0.6.3] - 2026-09-04
 
 ### Added

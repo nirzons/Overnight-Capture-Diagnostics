@@ -141,6 +141,31 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             }
         }
 
+        private bool resolveLocation = false;
+        [JsonProperty]
+        public bool ResolveLocation {
+            get => resolveLocation;
+            set {
+                resolveLocation = value;
+                RaisePropertyChanged(nameof(ResolveLocation));
+                RaisePropertyChanged(nameof(IsCustomLocationEnabled));
+                RaisePropertyChanged(nameof(CustomLocationVisibility));
+            }
+        }
+
+        private string customLocationName = string.Empty;
+        [JsonProperty]
+        public string CustomLocationName {
+            get => customLocationName;
+            set {
+                customLocationName = value;
+                RaisePropertyChanged(nameof(CustomLocationName));
+            }
+        }
+
+        public bool IsCustomLocationEnabled => !ResolveLocation;
+        public System.Windows.Visibility CustomLocationVisibility => ResolveLocation ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
         private string currentReadout = "--";
         public string CurrentReadout {
             get => currentReadout;
@@ -278,10 +303,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                     // Populate Equipment info (merging live Mediators for live session vs log-parsed for historic)
                     PopulateEquipmentDetails(session);
 
-                    if (session.Equipment != null && session.Equipment.SiteLatitude != 0 && session.Equipment.SiteLongitude != 0) {
-                        string locationName = await ReverseGeocodingService.GetLocationNameAsync(session.Equipment.SiteLatitude, session.Equipment.SiteLongitude);
-                        if (!string.IsNullOrWhiteSpace(locationName)) {
-                            session.Equipment.SiteName = locationName;
+                    if (session.Equipment != null) {
+                        if (ResolveLocation && (session.Equipment.SiteLatitude != 0 || session.Equipment.SiteLongitude != 0)) {
+                            string locationName = await ReverseGeocodingService.GetLocationNameAsync(session.Equipment.SiteLatitude, session.Equipment.SiteLongitude);
+                            if (!string.IsNullOrWhiteSpace(locationName)) {
+                                session.Equipment.SiteName = locationName;
+                            }
+                        } else if (!string.IsNullOrWhiteSpace(CustomLocationName)) {
+                            session.Equipment.SiteName = CustomLocationName.Trim();
                         }
                     }
 
@@ -460,6 +489,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 EnableDebugLogging = this.EnableDebugLogging,
                 EnableDiscordWebhook = this.EnableDiscordWebhook,
                 DiscordWebhookUrl = this.DiscordWebhookUrl,
+                ResolveLocation = this.ResolveLocation,
+                CustomLocationName = this.CustomLocationName,
                 CurrentReadout = "--",
                 CameraMediator = this.CameraMediator,
                 TelescopeMediator = this.TelescopeMediator,

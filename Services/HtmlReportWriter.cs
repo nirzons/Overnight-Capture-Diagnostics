@@ -16,9 +16,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string timelineSvg = chartService.GenerateTimelineSvg(session);
 
             string analysisType = session.IsLiveSession ? "Live Session Analysis" : "Historic Session Analysis";
-            string siteInfo = (session.Equipment.SiteLatitude != 0 || session.Equipment.SiteLongitude != 0)
-                ? $"{session.Equipment.SiteName} ({session.Equipment.SiteLatitude:F2}° N, {session.Equipment.SiteLongitude:F2}° E)"
-                : session.Equipment.SiteName;
+            string siteInfo = session.Equipment?.SiteName ?? "Observatory Site";
 
             string startStr = session.SessionStart != default ? session.SessionStart.ToString("yyyy-MM-dd HH:mm:ss") : "--";
             string endStr = session.SessionEnd != default ? session.SessionEnd.ToString("yyyy-MM-dd HH:mm:ss") : "--";
