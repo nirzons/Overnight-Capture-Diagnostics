@@ -47,10 +47,30 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     .Replace(@"\$\$SENSORTEMP\$\$", @"(?<SensorTemp>[-\d\.,]+)")
                     .Replace(@"\$\$HFR\$\$", @"(?<HFR>[\d\.,]+)")
                     .Replace(@"\$\$STARCOUNT\$\$", @"(?<StarCount>\d+)")
+                    .Replace(@"\$\$RMSARCSEC\$\$", @"(?<RMS>[\d\.,]+)")
+                    .Replace(@"\$\$RMSPIXELS\$\$", @"(?<RMSPixels>[\d\.,]+)")
                     .Replace(@"\$\$RMS\$\$", @"(?<RMS>[\d\.,]+)")
+                    .Replace(@"\$\$ECCENTRICITY\$\$", @"(?<Eccentricity>[\d\.,]+)")
+                    .Replace(@"\$\$FWHMARCSEC\$\$", @"(?<FWHM>[\d\.,]+)")
+                    .Replace(@"\$\$FWHMPIXELS\$\$", @"(?<FWHMPixels>[\d\.,]+)")
+                    .Replace(@"\$\$FWHM\$\$", @"(?<FWHM>[\d\.,]+)")
                     .Replace(@"\$\$FRAMENR\$\$", @"(?<FrameNr>\d+)")
                     .Replace(@"\$\$NUMBER\$\$", @"(?<FrameNr>\d+)")
-                    .Replace(@"\$\$FWHM\$\$", @"(?<FWHM>[\d\.,]+)");
+                    .Replace(@"\$\$CAMERA\$\$", @"(?<Camera>[^\\/_]+?)")
+                    .Replace(@"\$\$TELESCOPE\$\$", @"(?<Telescope>[^\\/_]+?)")
+                    .Replace(@"\$\$ROTATORANGLE\$\$", @"(?<RotatorAngle>[-\d\.,]+)")
+                    .Replace(@"\$\$READOUTMODE\$\$", @"(?<ReadoutMode>[^\\/_]+?)")
+                    .Replace(@"\$\$SITENAME\$\$", @"(?<SiteName>[^\\/_]+?)")
+                    .Replace(@"\$\$TARGETRA\$\$", @"(?<TargetRA>[^\\/_]+?)")
+                    .Replace(@"\$\$TARGETDEC\$\$", @"(?<TargetDec>[^\\/_]+?)")
+                    .Replace(@"\$\$ALTITUDE\$\$", @"(?<Altitude>[-\d\.,]+)")
+                    .Replace(@"\$\$AZIMUTH\$\$", @"(?<Azimuth>[-\d\.,]+)")
+                    .Replace(@"\$\$AIRMASS\$\$", @"(?<Airmass>[-\d\.,]+)")
+                    .Replace(@"\$\$MOONPHASE\$\$", @"(?<MoonPhase>[-\d\.,]+)")
+                    .Replace(@"\$\$MOONALTITUDE\$\$", @"(?<MoonAltitude>[-\d\.,]+)")
+                    .Replace(@"\$\$MOONILLUMINATION\$\$", @"(?<MoonIllum>[-\d\.,]+)")
+                    .Replace(@"\$\$ROW\$\$", @"(?<Row>\d+)")
+                    .Replace(@"\$\$COL\$\$", @"(?<Col>\d+)");
 
                 return new Regex(patternRegex + @"(?:\.fits|\.fit|\.xisf|\.tif)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
             });
@@ -70,10 +90,20 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
 
             // Built-in candidate N.I.N.A patterns to fallback to if custom pattern is missing or un-matched
+            patternsToTry.Add(@"$$DATEMINUS12$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$HFR$$_$$ECCENTRICITY$$_$$TARGETNAME$$_$$FWHM$$_$$RMSARCSEC$$");
+            patternsToTry.Add(@"$$DATEMINUS12$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_$$SENSORTEMP$$C_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$HFR$$_$$ECCENTRICITY$$_$$TARGETNAME$$_$$FWHM$$_$$RMSARCSEC$$");
             patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$__$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$TARGETNAME$$_$$HFR$$_$$RMS$$");
             patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_-$$SENSORTEMP$$C_$$EXPOSURETIME$$s_$$STARCOUNT$$STARS_$$HFR$$HFR_$$RMS$$RMS_$$FRAMENR$$");
             patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$DATETIME$$_$$FILTER$$_$$EXPOSURETIME$$s_GAIN$$GAIN$$_TEMP$$SENSORTEMP$$_HFR$$HFR$$_$$STARCOUNT$$STARS_RMS$$RMS$$_$$FRAMENR$$");
             patternsToTry.Add(@"$$DATETIME$$_$$FILTER$$_$$SENSORTEMP$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$STARCOUNT$$_$$HFR$$_$$TARGETNAME$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$\$$FILTER$$\$$TARGETNAME$$_$$FILTER$$_$$DATETIME$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$\$$DATE$$\$$FILTER$$\$$TARGETNAME$$_$$FILTER$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$\$$IMAGETYPE$$\$$TARGETNAME$$_$$FILTER$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$_$$FILTER$$_$$DATETIME$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$_$$FILTER$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$HFR$$_$$RMS$$");
+            patternsToTry.Add(@"$$TARGETNAME$$_$$FILTER$$_$$EXPOSURETIME$$s_$$HFR$$_$$RMS$$_$$FRAMENR$$");
+            patternsToTry.Add(@"$$TARGETNAME$$_$$FILTER$$_$$EXPOSURETIME$$s_$$FRAMENR$$_$$RMS$$_$$HFR$$");
+            patternsToTry.Add(@"$$TARGETNAME$$_$$EXPOSURETIME$$s_$$FILTER$$_$$FRAMENR$$_$$HFR$$_$$RMS$$");
 
             foreach (var pat in patternsToTry) {
                 try {

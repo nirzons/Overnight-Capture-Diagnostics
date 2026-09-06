@@ -60,7 +60,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine("  <div class=\"container\">");
 
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.5.0";
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.6.3";
 
             string duskDawnBanner = (session.AstroDusk.HasValue && session.AstroDawn.HasValue)
                 ? $"{session.AstroDusk.Value:HH:mm} — {session.AstroDawn.Value:HH:mm} ({FormatTimeSpan(session.AstroDarknessDuration)})"
@@ -82,7 +82,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine($"        <span class=\"score-badge\">🌟 Night Score: {session.MasterQualityScore:F0} / 100</span>");
             sb.AppendLine($"        <span style=\"color: #10B981; font-weight: bold; margin-right: 16px;\">Integration: {integrationStr}</span>");
             sb.AppendLine($"        <span style=\"color: #38BDF8; font-weight: bold; margin-right: 16px;\">Dark Sky Efficiency: {darkEfficiencyBanner}</span>");
-            sb.AppendLine($"        <span style=\"color: #A78BFA; font-weight: bold;\">Active Duty Cycle: {dutyCycleBanner}</span>");
+            sb.AppendLine($"        <span style=\"color: #A78BFA; font-weight: bold; margin-right: 16px;\">Active Duty Cycle: {dutyCycleBanner}</span>");
+            if (session.TelemetrySamples.Any(s => s.PowerWatts.HasValue || s.CurrentAmps.HasValue || s.Voltage.HasValue) || session.TotalPowerConsumedWh > 0) {
+                sb.AppendLine($"        <span style=\"color: #FBBF24; font-weight: bold;\">⚡ Power: {session.TotalPowerConsumedWh:F1} Wh (~{session.TotalPowerConsumedAh:F1} Ah)</span>");
+            }
             sb.AppendLine("      </div>");
             sb.AppendLine("    </div>");
 
@@ -108,6 +111,47 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("    </div>");
             }
 
+            // Power Diagnostics Card (if present)
+            if (session.TelemetrySamples.Any(s => s.PowerWatts.HasValue || s.CurrentAmps.HasValue || s.Voltage.HasValue) || session.TotalPowerConsumedWh > 0) {
+                sb.AppendLine("    <div class=\"card\">");
+                sb.AppendLine("      <h2>⚡ Power & Energy Diagnostics</h2>");
+                sb.AppendLine("      <table>");
+                sb.AppendLine("        <thead><tr><th>Metric</th><th>Total / Average</th><th>Peak / Details</th></tr></thead>");
+                sb.AppendLine("        <tbody>");
+                sb.AppendLine($"          <tr><td><strong>Total Energy Consumed</strong></td><td><strong style=\"color: #FBBF24;\">{session.TotalPowerConsumedWh:F1} Wh</strong></td><td>Capacity: <strong>~{session.TotalPowerConsumedAh:F1} Ah</strong></td></tr>");
+                if (session.AverageVoltage > 0 || session.AverageCurrentAmps > 0) {
+                    string vStr = session.AverageVoltage > 0 ? $"{session.AverageVoltage:F1} V" : "--";
+                    string aStr = session.AverageCurrentAmps > 0 ? $"{session.AverageCurrentAmps:F2} A" : "--";
+                    sb.AppendLine($"          <tr><td><strong>Average Voltage & Current</strong></td><td>Avg Voltage: <strong>{vStr}</strong></td><td>Avg Current: <strong>{aStr}</strong></td></tr>");
+                }
+                if (session.PeakPowerWatts > 0) {
+                    sb.AppendLine($"          <tr><td><strong>Peak Power Draw</strong></td><td><strong style=\"color: #F87171;\">{session.PeakPowerWatts:F1} W</strong></td><td>Maximum instantaneous power load</td></tr>");
+                }
+                sb.AppendLine("        </tbody>");
+                sb.AppendLine("      </table>");
+                sb.AppendLine("    </div>");
+            }
+
+            // Calculate Session-Wide Sensor Temperature Median
+            var lightFrameTemps = session.Targets
+                .SelectMany(t => t.Frames)
+                .Where(f => !f.IsCalibrationFrame && f.CameraTemperature.HasValue)
+                .Select(f => f.CameraTemperature!.Value)
+                .OrderBy(t => t)
+                .ToList();
+
+            double coolingMedian;
+            if (lightFrameTemps.Any()) {
+                int mid = lightFrameTemps.Count / 2;
+                coolingMedian = (lightFrameTemps.Count % 2 == 0)
+                    ? (lightFrameTemps[mid - 1] + lightFrameTemps[mid]) / 2.0
+                    : lightFrameTemps[mid];
+            } else if (session.Equipment.CameraTempSetpoint != 0) {
+                coolingMedian = session.Equipment.CameraTempSetpoint;
+            } else {
+                coolingMedian = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? 0;
+            }
+
             // Equipment Profile Card(s)
             sb.AppendLine("    <div class=\"card\">");
             sb.AppendLine("      <h2>⚙️ Equipment & Optical Profile</h2>");
@@ -120,14 +164,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("        <tbody>");
                     sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
-                    if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
-                        double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
-                        sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{medianTarget:F1}°C</strong></td></tr>");
+                    if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
+                        sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{coolingMedian:F1}°C</strong></td></tr>");
                     }
                     sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Filter Wheel</strong></td><td>{eq.FilterWheelName}</td><td>Active Filters: {session.FiltersUsedFormatted}</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Focuser</strong></td><td>{eq.FocuserName}</td><td>Thermal Slope: {session.ThermalFocusSlopeStepsPerDegree:F1} steps/°C</td></tr>");
+                    if (!string.IsNullOrWhiteSpace(eq.SwitchName) && eq.SwitchName != "Not Connected") {
+                        sb.AppendLine($"          <tr><td><strong>Power Hub / Switch</strong></td><td>{eq.SwitchName}</td><td>Active Power & Telemetry</td></tr>");
+                    }
                     sb.AppendLine("        </tbody>");
                     sb.AppendLine("      </table>");
                 }
@@ -138,14 +184,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("        <tbody>");
                 sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
-                if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
-                    double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
-                    sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{medianTarget:F1}°C</strong></td></tr>");
+                if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
+                    sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{coolingMedian:F1}°C</strong></td></tr>");
                 }
                 sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Filter Wheel</strong></td><td>{eq.FilterWheelName}</td><td>Active Filters: {session.FiltersUsedFormatted}</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Focuser</strong></td><td>{eq.FocuserName}</td><td>Thermal Slope: {session.ThermalFocusSlopeStepsPerDegree:F1} steps/°C</td></tr>");
+                if (!string.IsNullOrWhiteSpace(eq.SwitchName) && eq.SwitchName != "Not Connected") {
+                    sb.AppendLine($"          <tr><td><strong>Power Hub / Switch</strong></td><td>{eq.SwitchName}</td><td>Active Power & Telemetry</td></tr>");
+                }
                 sb.AppendLine("        </tbody>");
                 sb.AppendLine("      </table>");
             }
@@ -153,9 +201,19 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
             // Hardware Errors & Disconnects Card
             var liveSessionErrors = session.HardwareErrors.Where(err => {
-                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                var errTime = err.Timestamp;
                 var errEnd = err.EndTimestamp ?? err.Timestamp;
-                return errEnd >= session.FirstLightTimestamp.Value && err.Timestamp <= session.LastLightTimestamp.Value;
+
+                if (session.Targets.Any()) {
+                    return session.Targets.Any(t => {
+                        var tStart = t.StartTime.AddMinutes(-5);
+                        var tEnd = t.EndTime.AddMinutes(5);
+                        return errEnd >= tStart && errTime <= tEnd;
+                    });
+                }
+
+                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                return errEnd >= session.FirstLightTimestamp.Value && errTime <= session.LastLightTimestamp.Value;
             }).ToList();
 
             if (liveSessionErrors.Any()) {
@@ -192,14 +250,28 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 if (session.SqmAvg > 0) {
                     sb.AppendLine($"          <tr><td><strong>SQM Sky Quality</strong></td><td>--</td><td>--</td><td><strong style=\"color: #38BDF8;\">{session.SqmAvg:F2} mag/arcsec²</strong></td><td>Sky Brightness</td></tr>");
                 }
-                sb.AppendLine($"          <tr><td><strong>Dew Heater Status</strong></td><td>--</td><td>--</td><td><strong>{session.DewHeaterStatus}</strong></td><td>Duty Cycle</td></tr>");
+                if (session.DewHeaterAvg.HasValue) {
+                    string status = (session.DewHeaterMin.HasValue && session.DewHeaterMax.HasValue && Math.Abs(session.DewHeaterMin.Value - session.DewHeaterMax.Value) < 0.01)
+                        ? "Constant" 
+                        : "Active (Dynamic)";
+                    sb.AppendLine($"          <tr><td><strong>Dew Heater Duty (%)</strong></td><td>{session.DewHeaterMin:F0}%</td><td>{session.DewHeaterMax:F0}%</td><td><strong style=\"color: #F472B6;\">{session.DewHeaterAvg:F0}%</strong></td><td>{status}</td></tr>");
+                } else if (!string.IsNullOrWhiteSpace(session.DewHeaterStatus) && session.DewHeaterStatus != "Not Monitored") {
+                    sb.AppendLine($"          <tr><td><strong>Dew Heater Status</strong></td><td>--</td><td>--</td><td><strong>{session.DewHeaterStatus}</strong></td><td>Constant</td></tr>");
+                }
                 sb.AppendLine("        </tbody>");
                 sb.AppendLine("      </table>");
 
-                if (session.MinDewPointMargin <= 2.0) {
+                if (session.MinDewPointMargin < 2.5) {
                     sb.AppendLine($"      <div class=\"anomaly-group\" style=\"border-left-color: #F59E0B; margin-top: 12px;\">");
                     sb.AppendLine($"        <div class=\"anomaly-title\" style=\"color: #F59E0B;\">⚠️ Dew Risk Alert</div>");
                     sb.AppendLine($"        <div style=\"color: #CBD5E1; font-size: 13px;\">Ambient temperature approached within <strong>{session.MinDewPointMargin:F1}°C</strong> of the dew point during the session. Ensure dew heaters remain active.</div>");
+                    sb.AppendLine("      </div>");
+                }
+
+                string envSvg = chartService.GenerateEnvironmentalSvg(session.WeatherSamples, session.SessionStart, session.SessionEnd);
+                if (!string.IsNullOrEmpty(envSvg)) {
+                    sb.AppendLine("      <div class=\"chart-container\" style=\"margin-top: 16px;\">");
+                    sb.AppendLine(envSvg);
                     sb.AppendLine("      </div>");
                 }
                 sb.AppendLine("    </div>");

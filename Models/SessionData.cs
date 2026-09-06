@@ -10,6 +10,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double DewPoint { get; set; }
         public double SkyQuality { get; set; } // SQM mag/arcsec^2
         public double CloudCover { get; set; }
+        public double? PowerWatts { get; set; }
+        public double? Voltage { get; set; }
+        public double? DewHeaterDuty { get; set; }
     }
 
     public class CalibrationSummary {
@@ -62,9 +65,15 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public List<TargetSessionData> Targets { get; set; } = new List<TargetSessionData>();
         public List<CalibrationSummary> CalibrationFrames { get; set; } = new List<CalibrationSummary>();
         
-        public double MaxDewPointMargin { get; set; } = double.MaxValue;
-        
         public List<WeatherSample> WeatherSamples { get; set; } = new List<WeatherSample>();
+        public List<TelemetrySample> TelemetrySamples { get; set; } = new List<TelemetrySample>();
+
+        // Power Telemetry Summaries
+        public double TotalPowerConsumedWh { get; set; }
+        public double TotalPowerConsumedAh { get; set; }
+        public double AverageVoltage { get; set; }
+        public double AverageCurrentAmps { get; set; }
+        public double PeakPowerWatts { get; set; }
         public List<PlateSolveRecord> PlateSolves { get; set; } = new List<PlateSolveRecord>();
         public List<PolarAlignmentRecord> PolarAlignments { get; set; } = new List<PolarAlignmentRecord>();
         public List<AnomalyRecord> MasterAnomalies { get; set; } = new List<AnomalyRecord>();
@@ -103,6 +112,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double SqmAvg { get; set; }
         public double MinDewPointMargin { get; set; } = 99.0;
         public string DewHeaterStatus { get; set; } = "Not Monitored";
+        public double? DewHeaterMin { get; set; }
+        public double? DewHeaterMax { get; set; }
+        public double? DewHeaterAvg { get; set; }
 
         public List<string> FiltersUsed => Targets
             .SelectMany(t => t.Frames.Where(f => !f.IsCalibrationFrame).Select(f => f.Filter))

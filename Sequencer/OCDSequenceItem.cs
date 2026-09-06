@@ -45,6 +45,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
         public ISwitchMediator SwitchMediator { get; set; }
 
         [Import]
+        public IWeatherDataMediator WeatherDataMediator { get; set; }
+
+        [Import]
         public IProfileService ProfileService { get; set; }
 
         // Settings Properties
@@ -205,122 +208,166 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             await Task.Run(async () => {
                 token.ThrowIfCancellationRequested();
 
-                // 1. Parse Logs by Session Date
-                var parser = new LogParserService();
-                var session = parser.ParseLogFiles(TargetSessionDate, token, null, EnableDebugLogging);
+                try {
+                    // 1. Parse Logs by Session Date
+                    string livePattern = ProfileService?.ActiveProfile?.ImageFileSettings?.FilePattern;
+                    var parser = new LogParserService();
+                    var session = parser.ParseLogFiles(TargetSessionDate, token, null, EnableDebugLogging, livePattern);
 
-                // Auto-detect Live vs Historic session
-                DateTime now = DateTime.Now;
-                DateTime currentAstroDate = now.Hour < 12 ? now.Date.AddDays(-1) : now.Date;
+                    // Auto-detect Live vs Historic session
+                    DateTime now = DateTime.Now;
+                    DateTime currentAstroDate = now.Hour < 12 ? now.Date.AddDays(-1) : now.Date;
 
-                bool isLive = string.IsNullOrWhiteSpace(TargetSessionDate) || session.SessionStart.Date == currentAstroDate;
-                session.IsLiveSession = isLive;
+                    bool isLive = string.IsNullOrWhiteSpace(TargetSessionDate) || session.SessionStart.Date == currentAstroDate;
+                    session.IsLiveSession = isLive;
 
-                if (isLive) {
-                    session.SessionEnd = DateTime.Now;
-                }
-
-                bool hasData = session != null && session.Targets != null && session.Targets.Any(t => t.Frames != null && t.Frames.Count > 0);
-
-                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.4.0";
-
-                if (!hasData) {
-                    string logsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NINA", "Logs");
-                    string detailedError = isLive
-                        ? $"Report generation skipped: No valid capture session telemetry found in log files inside '{logsFolder}'."
-                        : $"Report generation skipped: No log files or valid capture telemetry found matching session date '{TargetSessionDate}' inside '{logsFolder}'.";
-
-                    string debugState = EnableDebugLogging ? "Enabled" : "Disabled";
-                    string sessionType = isLive ? "Live" : "Historic";
-                    Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. No report was created (No session data found). Session Type: {sessionType}, Debug Mode: {debugState}.");
-
-                    string userNotice = isLive
-                        ? "Overnight Capture Diagnostics: No active or recent capture session logs found."
-                        : $"Overnight Capture Diagnostics: No session logs found for date '{TargetSessionDate}'.";
-
-                    Notification.ShowError(userNotice);
-
-                    CurrentReadout = "No Session Found";
-                    progress.Report(new ApplicationStatus { Status = "OCD: No Session Data Found" });
-                    return;
-                }
-
-                // 2. Determine Output Directory
-                string targetDir = ReportOutputPath;
-                if (string.IsNullOrWhiteSpace(targetDir)) {
-                    string defaultImageDir = ProfileService?.ActiveProfile?.ImageFileSettings?.FilePath;
-                    if (!string.IsNullOrWhiteSpace(defaultImageDir) && Directory.Exists(defaultImageDir)) {
-                        targetDir = Path.Combine(defaultImageDir, "OCD_Reports");
+                    if (isLive) {
+                        session.SessionEnd = DateTime.Now;
+                        // Stop telemetry monitor and drain samples collected during session
+                        var liveSamples = TelemetryMonitorService.Instance.Stop(session.SessionStart, session.SessionEnd);
+                        if (liveSamples != null && liveSamples.Any()) {
+                            session.TelemetrySamples = liveSamples;
+                        }
                     } else {
-                        string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                        targetDir = Path.Combine(docs, "OCD_Reports");
+                        // In historic mode, disarm live monitor so it doesn't leave orphan timers
+                        TelemetryMonitorService.Instance.Stop();
                     }
-                }
 
-                if (!Directory.Exists(targetDir)) {
-                    Directory.CreateDirectory(targetDir);
-                }
+                    bool hasData = session != null && session.Targets != null && session.Targets.Any(t => t.Frames != null && t.Frames.Count > 0);
 
-                // Populate Equipment info (merging live Mediators for live session vs log-parsed for historic)
-                PopulateEquipmentDetails(session);
+                    var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                    string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.6.3";
 
-                if (session.Equipment != null && session.Equipment.SiteLatitude != 0 && session.Equipment.SiteLongitude != 0) {
-                    string locationName = await ReverseGeocodingService.GetLocationNameAsync(session.Equipment.SiteLatitude, session.Equipment.SiteLongitude);
-                    if (!string.IsNullOrWhiteSpace(locationName)) {
-                        session.Equipment.SiteName = locationName;
+                    if (!hasData) {
+                        string logsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NINA", "Logs");
+                        string detailedError = isLive
+                            ? $"Report generation skipped: No valid capture session telemetry found in log files inside '{logsFolder}'."
+                            : $"Report generation skipped: No log files or valid capture telemetry found matching session date '{TargetSessionDate}' inside '{logsFolder}'.";
+
+                        string debugState = EnableDebugLogging ? "Enabled" : "Disabled";
+                        string sessionType = isLive ? "Live" : "Historic";
+                        Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. No report was created (No session data found). Session Type: {sessionType}, Debug Mode: {debugState}.");
+
+                        string userNotice = isLive
+                            ? "Overnight Capture Diagnostics: No active or recent capture session logs found."
+                            : $"Overnight Capture Diagnostics: No session logs found for date '{TargetSessionDate}'.";
+
+                        Notification.ShowError(userNotice);
+
+                        CurrentReadout = "No Session Found";
+                        progress.Report(new ApplicationStatus { Status = "OCD: No Session Data Found" });
+                        return;
                     }
-                }
 
-                var calculator = new SessionStatsCalculator();
-                calculator.CalculateStatistics(session, EnableDebugLogging);
+                    // 2. Determine Output Directory
+                    string targetDir = ReportOutputPath;
+                    if (string.IsNullOrWhiteSpace(targetDir)) {
+                        string defaultImageDir = ProfileService?.ActiveProfile?.ImageFileSettings?.FilePath;
+                        if (!string.IsNullOrWhiteSpace(defaultImageDir) && Directory.Exists(defaultImageDir)) {
+                            targetDir = Path.Combine(defaultImageDir, "OCD_Reports");
+                        } else {
+                            string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                            targetDir = Path.Combine(docs, "OCD_Reports");
+                        }
+                    }
 
-                var chartService = new SvgChartGeneratorService();
-                string timestampStr = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                    if (!Directory.Exists(targetDir)) {
+                        Directory.CreateDirectory(targetDir);
+                    }
 
-                // 3. Generate Markdown Report
-                if (GenerateMarkdown) {
-                    var mdWriter = new MarkdownReportWriter();
-                    string mdContent = mdWriter.GenerateMarkdownReport(session, chartService);
-                    string mdPath = Path.Combine(targetDir, $"OCD_Report_{timestampStr}.md");
-                    File.WriteAllText(mdPath, mdContent);
-                }
+                    // Populate Equipment info (merging live Mediators for live session vs log-parsed for historic)
+                    PopulateEquipmentDetails(session);
 
-                // 4. Generate HTML Report
-                string htmlPath = string.Empty;
-                if (GenerateHtml) {
-                    var htmlWriter = new HtmlReportWriter();
-                    string htmlContent = htmlWriter.GenerateHtmlReport(session, chartService);
-                    htmlPath = Path.Combine(targetDir, $"OCD_Report_{timestampStr}.html");
-                    File.WriteAllText(htmlPath, htmlContent);
-                }
+                    if (session.Equipment != null && session.Equipment.SiteLatitude != 0 && session.Equipment.SiteLongitude != 0) {
+                        string locationName = await ReverseGeocodingService.GetLocationNameAsync(session.Equipment.SiteLatitude, session.Equipment.SiteLongitude);
+                        if (!string.IsNullOrWhiteSpace(locationName)) {
+                            session.Equipment.SiteName = locationName;
+                        }
+                    }
 
-                // 5. Post Discord Webhook
-                if (EnableDiscordWebhook && !string.IsNullOrWhiteSpace(DiscordWebhookUrl)) {
-                    var webhook = new WebhookService();
-                    await webhook.PostDiscordSummary(DiscordWebhookUrl, session);
-                }
+                    var calculator = new SessionStatsCalculator();
+                    calculator.CalculateStatistics(session, EnableDebugLogging);
 
-                string reportFileName = !string.IsNullOrEmpty(htmlPath) 
-                    ? Path.GetFileName(htmlPath) 
-                    : (GenerateMarkdown ? $"OCD_Report_{timestampStr}.md" : $"OCD_Report_{timestampStr}");
-                string activeDebugState = EnableDebugLogging ? "Enabled" : "Disabled";
-                string activeSessionType = isLive ? "Live" : "Historic";
+                    var chartService = new SvgChartGeneratorService();
+                    string timestampStr = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
 
-                Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. Created {activeSessionType} report '{reportFileName}' in '{targetDir}'. Debug Mode: {activeDebugState}.");
+                    // 3. Generate Markdown Report
+                    if (GenerateMarkdown) {
+                        var mdWriter = new MarkdownReportWriter();
+                        string mdContent = mdWriter.GenerateMarkdownReport(session, chartService);
+                        string mdPath = Path.Combine(targetDir, $"OCD_Report_{timestampStr}.md");
+                        File.WriteAllText(mdPath, mdContent);
+                    }
 
-                CurrentReadout = "Complete";
-                progress.Report(new ApplicationStatus { Status = "OCD: Report Generated Successfully!" });
+                    // 4. Generate HTML Report
+                    string htmlPath = string.Empty;
+                    if (GenerateHtml) {
+                        var htmlWriter = new HtmlReportWriter();
+                        string htmlContent = htmlWriter.GenerateHtmlReport(session, chartService);
+                        htmlPath = Path.Combine(targetDir, $"OCD_Report_{timestampStr}.html");
+                        File.WriteAllText(htmlPath, htmlContent);
+                    }
 
-                // 6. Auto-Open HTML Report
-                if (GenerateHtml && AutoOpenHtmlReport && File.Exists(htmlPath)) {
-                    try {
-                        Process.Start(new ProcessStartInfo {
-                            FileName = htmlPath,
-                            UseShellExecute = true
-                        });
-                    } catch {
-                        // Ignore browser opening failures
+                    // 5. Export Telemetry CSV if telemetry samples were collected
+                    if (session.TelemetrySamples.Any()) {
+                        try {
+                            string csvPath = Path.Combine(targetDir, $"OCD_Telemetry_{timestampStr}.csv");
+                            var csvLines = new List<string> {
+                                "Timestamp,Voltage_V,Current_A,Power_W,Temp_C,Humidity_Pct,DewPoint_C,DewHeater_Pct,SQM,CloudCover_Pct"
+                            };
+                            foreach (var ts in session.TelemetrySamples.OrderBy(s => s.Timestamp)) {
+                                csvLines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2},{3},{4},{5},{6},{7},{8},{9}",
+                                    ts.Timestamp,
+                                    ts.Voltage.HasValue ? ts.Voltage.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.CurrentAmps.HasValue ? ts.CurrentAmps.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.PowerWatts.HasValue ? ts.PowerWatts.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.AmbientTemperature.HasValue ? ts.AmbientTemperature.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.Humidity.HasValue ? ts.Humidity.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.DewPoint.HasValue ? ts.DewPoint.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.DewHeaterDuty.HasValue ? ts.DewHeaterDuty.Value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.SkyQuality.HasValue ? ts.SkyQuality.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.CloudCover.HasValue ? ts.CloudCover.Value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) : ""
+                                ));
+                            }
+                            File.WriteAllLines(csvPath, csvLines);
+                        } catch (Exception ex) {
+                            Logger.Warning($"[OCD Telemetry] Failed to write telemetry CSV: {ex.Message}");
+                        }
+                    }
+
+                    // 6. Post Discord Webhook
+                    if (EnableDiscordWebhook && !string.IsNullOrWhiteSpace(DiscordWebhookUrl)) {
+                        var webhook = new WebhookService();
+                        await webhook.PostDiscordSummary(DiscordWebhookUrl, session);
+                    }
+
+                    string reportFileName = !string.IsNullOrEmpty(htmlPath) 
+                        ? Path.GetFileName(htmlPath) 
+                        : (GenerateMarkdown ? $"OCD_Report_{timestampStr}.md" : $"OCD_Report_{timestampStr}");
+                    string activeDebugState = EnableDebugLogging ? "Enabled" : "Disabled";
+                    string activeSessionType = isLive ? "Live" : "Historic";
+
+                    Logger.Info($"[Overnight Capture Diagnostics {versionStr}] Execution finished. Created {activeSessionType} report '{reportFileName}' in '{targetDir}'. Debug Mode: {activeDebugState}.");
+
+                    CurrentReadout = "Complete";
+                    progress.Report(new ApplicationStatus { Status = "OCD: Report Generated Successfully!" });
+
+                    // 7. Auto-Open HTML Report
+                    if (GenerateHtml && AutoOpenHtmlReport && File.Exists(htmlPath)) {
+                        try {
+                            Process.Start(new ProcessStartInfo {
+                                FileName = htmlPath,
+                                UseShellExecute = true
+                            });
+                        } catch {
+                            // Ignore browser opening failures
+                        }
+                    }
+                } finally {
+                    // Ensure timer is completely halted on any abort or exception
+                    if (TelemetryMonitorService.Instance.IsRunning) {
+                        TelemetryMonitorService.Instance.Stop();
                     }
                 }
 
@@ -389,6 +436,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             if (guider != null && guider.Connected && !string.IsNullOrWhiteSpace(guider.Name)) {
                 session.Equipment.GuiderName = guider.Name;
             }
+
+            var sw = SwitchMediator?.GetInfo();
+            if (sw != null && sw.Connected && !string.IsNullOrWhiteSpace(sw.Name)) {
+                if (string.IsNullOrWhiteSpace(session.Equipment.SwitchName) || session.Equipment.SwitchName == "Not Connected") {
+                    session.Equipment.SwitchName = sw.Name;
+                }
+            }
         }
 
         public override object Clone() {
@@ -413,6 +467,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 FilterWheelMediator = this.FilterWheelMediator,
                 GuiderMediator = this.GuiderMediator,
                 SwitchMediator = this.SwitchMediator,
+                WeatherDataMediator = this.WeatherDataMediator,
                 ProfileService = this.ProfileService
             };
         }

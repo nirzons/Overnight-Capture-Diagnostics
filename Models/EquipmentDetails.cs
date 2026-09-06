@@ -26,5 +26,29 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double SiteLongitude { get; set; }
         public double SiteElevation { get; set; }
         public string SiteName { get; set; } = "Observatory Site";
+
+        public EquipmentDetails Clone() {
+            return new EquipmentDetails {
+                CameraName = this.CameraName,
+                CameraWidth = this.CameraWidth,
+                CameraHeight = this.CameraHeight,
+                PixelSizeMicrons = this.PixelSizeMicrons,
+                CameraTempSetpoint = this.CameraTempSetpoint,
+                TelescopeName = this.TelescopeName,
+                FocalLengthMm = this.FocalLengthMm,
+                ApertureMm = this.ApertureMm,
+                FocuserName = this.FocuserName,
+                FocuserPosition = this.FocuserPosition,
+                FilterWheelName = this.FilterWheelName,
+                MountName = this.MountName,
+                GuiderName = this.GuiderName,
+                SwitchName = this.SwitchName,
+                WeatherName = this.WeatherName,
+                SiteLatitude = this.SiteLatitude,
+                SiteLongitude = this.SiteLongitude,
+                SiteElevation = this.SiteElevation,
+                SiteName = this.SiteName
+            };
+        }
     }
 }

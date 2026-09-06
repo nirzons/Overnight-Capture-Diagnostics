@@ -131,33 +131,134 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             }
             session.TotalStorageBytes = storage;
 
-            // Calculate Environmental & Weather Summaries
-            if (session.WeatherSamples.Any()) {
-                session.AmbientTempMin = session.WeatherSamples.Min(w => w.AmbientTemperature);
-                session.AmbientTempMax = session.WeatherSamples.Max(w => w.AmbientTemperature);
-                session.AmbientTempAvg = session.WeatherSamples.Average(w => w.AmbientTemperature);
+            // Calculate Power Telemetry Statistics (Trapezoidal Integration)
+            if (session.TelemetrySamples.Any()) {
+                var sortedSamples = session.TelemetrySamples.OrderBy(s => s.Timestamp).ToList();
 
-                session.HumidityMin = session.WeatherSamples.Min(w => w.Humidity);
-                session.HumidityMax = session.WeatherSamples.Max(w => w.Humidity);
-                session.HumidityAvg = session.WeatherSamples.Average(w => w.Humidity);
+                // 1. Trapezoidal Capacity Integration (Ah)
+                double totalAh = 0;
+                for (int i = 0; i < sortedSamples.Count - 1; i++) {
+                    var s1 = sortedSamples[i];
+                    var s2 = sortedSamples[i + 1];
+                    if (s1.CurrentAmps.HasValue && s2.CurrentAmps.HasValue) {
+                        double dtSec = (s2.Timestamp - s1.Timestamp).TotalSeconds;
+                        if (dtSec > 0 && dtSec < 7200) {
+                            totalAh += ((s1.CurrentAmps.Value + s2.CurrentAmps.Value) / 2.0) * (dtSec / 3600.0);
+                        }
+                    }
+                }
+                session.TotalPowerConsumedAh = totalAh;
 
-                session.DewPointMin = session.WeatherSamples.Min(w => w.DewPoint);
-                session.DewPointMax = session.WeatherSamples.Max(w => w.DewPoint);
-                session.DewPointAvg = session.WeatherSamples.Average(w => w.DewPoint);
+                // 2. Trapezoidal Energy Integration (Wh)
+                double totalWh = 0;
+                for (int i = 0; i < sortedSamples.Count - 1; i++) {
+                    var s1 = sortedSamples[i];
+                    var s2 = sortedSamples[i + 1];
+                    if (s1.PowerWatts.HasValue && s2.PowerWatts.HasValue) {
+                        double dtSec = (s2.Timestamp - s1.Timestamp).TotalSeconds;
+                        if (dtSec > 0 && dtSec < 7200) {
+                            totalWh += ((s1.PowerWatts.Value + s2.PowerWatts.Value) / 2.0) * (dtSec / 3600.0);
+                        }
+                    }
+                }
+                session.TotalPowerConsumedWh = totalWh;
 
-                var sqmSamples = session.WeatherSamples.Where(w => w.SkyQuality > 0).ToList();
-                if (sqmSamples.Any()) {
-                    session.SqmAvg = sqmSamples.Average(w => w.SkyQuality);
+                // 3. Summary Power Averages
+                var vList = sortedSamples.Where(s => s.Voltage.HasValue && s.Voltage.Value > 0).Select(s => s.Voltage!.Value).ToList();
+                if (vList.Any()) session.AverageVoltage = vList.Average();
+
+                var aList = sortedSamples.Where(s => s.CurrentAmps.HasValue && s.CurrentAmps.Value >= 0).Select(s => s.CurrentAmps!.Value).ToList();
+                if (aList.Any()) session.AverageCurrentAmps = aList.Average();
+
+                var pList = sortedSamples.Where(s => s.PowerWatts.HasValue && s.PowerWatts.Value >= 0).Select(s => s.PowerWatts!.Value).ToList();
+                if (pList.Any()) session.PeakPowerWatts = pList.Max();
+
+                // Derived Fallbacks if only one metric was available
+                if (session.TotalPowerConsumedAh == 0 && session.TotalPowerConsumedWh > 0 && session.AverageVoltage > 0) {
+                    session.TotalPowerConsumedAh = session.TotalPowerConsumedWh / session.AverageVoltage;
+                } else if (session.TotalPowerConsumedWh == 0 && session.TotalPowerConsumedAh > 0 && session.AverageVoltage > 0) {
+                    session.TotalPowerConsumedWh = session.TotalPowerConsumedAh * session.AverageVoltage;
                 }
 
-                session.MinDewPointMargin = session.WeatherSamples.Min(w => w.AmbientTemperature - w.DewPoint);
-
-                if (session.MinDewPointMargin <= 2.0) {
-                    session.MasterAnomalies.Add(new AnomalyRecord {
-                        Severity = AnomalySeverity.Warning,
-                        Category = "Environmental",
-                        Description = $"Ambient temperature approached within {session.MinDewPointMargin:F1}°C of the dew point during the session. Risk of optical dew formation."
+                // Merge environmental readings from telemetry into WeatherSamples
+                foreach (var sample in sortedSamples) {
+                    session.WeatherSamples.Add(new WeatherSample {
+                        Timestamp = sample.Timestamp,
+                        AmbientTemperature = sample.AmbientTemperature ?? double.NaN,
+                        Humidity = sample.Humidity ?? double.NaN,
+                        DewPoint = sample.DewPoint ?? double.NaN,
+                        SkyQuality = sample.SkyQuality ?? 0,
+                        CloudCover = sample.CloudCover ?? 0,
+                        PowerWatts = sample.PowerWatts,
+                        Voltage = sample.Voltage,
+                        DewHeaterDuty = sample.DewHeaterDuty
                     });
+                }
+
+                var validDewDuty = sortedSamples
+                    .Where(s => s.DewHeaterDuty.HasValue)
+                    .Select(s => s.DewHeaterDuty!.Value)
+                    .ToList();
+
+                if (validDewDuty.Any()) {
+                    session.DewHeaterMin = validDewDuty.Min();
+                    session.DewHeaterMax = validDewDuty.Max();
+                    session.DewHeaterAvg = validDewDuty.Average();
+                    session.DewHeaterStatus = $"Active ({session.DewHeaterAvg.Value:F0}% avg)";
+                }
+            }
+
+            // Calculate Environmental & Weather Summaries
+            if (session.WeatherSamples.Any()) {
+                var validTemps = session.WeatherSamples
+                    .Where(w => !double.IsNaN(w.AmbientTemperature) && w.AmbientTemperature > -60 && w.AmbientTemperature < 80)
+                    .Select(w => w.AmbientTemperature)
+                    .ToList();
+                if (validTemps.Any()) {
+                    session.AmbientTempMin = validTemps.Min();
+                    session.AmbientTempMax = validTemps.Max();
+                    session.AmbientTempAvg = validTemps.Average();
+                }
+
+                var validHum = session.WeatherSamples
+                    .Where(w => !double.IsNaN(w.Humidity) && w.Humidity > 0 && w.Humidity <= 100)
+                    .Select(w => w.Humidity)
+                    .ToList();
+                if (validHum.Any()) {
+                    session.HumidityMin = validHum.Min();
+                    session.HumidityMax = validHum.Max();
+                    session.HumidityAvg = validHum.Average();
+                }
+
+                var validDew = session.WeatherSamples
+                    .Where(w => !double.IsNaN(w.DewPoint) && w.DewPoint > -60 && w.DewPoint < 80)
+                    .Select(w => w.DewPoint)
+                    .ToList();
+                if (validDew.Any()) {
+                    session.DewPointMin = validDew.Min();
+                    session.DewPointMax = validDew.Max();
+                    session.DewPointAvg = validDew.Average();
+                }
+
+                var sqmSamples = session.WeatherSamples.Where(w => !double.IsNaN(w.SkyQuality) && w.SkyQuality > 0).Select(w => w.SkyQuality).ToList();
+                if (sqmSamples.Any()) {
+                    session.SqmAvg = sqmSamples.Average();
+                }
+
+                var validMargins = session.WeatherSamples
+                    .Where(w => !double.IsNaN(w.AmbientTemperature) && !double.IsNaN(w.DewPoint) && w.AmbientTemperature > -60 && w.DewPoint > -60)
+                    .Select(w => w.AmbientTemperature - w.DewPoint)
+                    .ToList();
+                if (validMargins.Any()) {
+                    session.MinDewPointMargin = validMargins.Min();
+
+                    if (session.MinDewPointMargin < 2.5) {
+                        session.MasterAnomalies.Add(new AnomalyRecord {
+                            Severity = AnomalySeverity.Warning,
+                            Category = "Environmental",
+                            Description = $"Ambient temperature approached within {session.MinDewPointMargin:F1}°C of the dew point during the session. Risk of optical dew formation."
+                        });
+                    }
                 }
             }
         }
@@ -270,8 +371,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (f.GuideTotalRms > 0 && target.GuideRmsMedian > 0) {
                     double rmsArcsec = f.GuideTotalRms;
-                    double maxAllowedRms = Math.Max(2.5, pixelScaleArcsec * 1.5);
-                    if (rmsArcsec > target.GuideRmsMedian + (2.5 * target.GuideRmsStdDev) || (rmsArcsec > target.GuideRmsMedian * 2.0 && rmsArcsec > maxAllowedRms)) {
+                    double minRmsFloor = Math.Max(1.5, pixelScaleArcsec * 0.75);
+                    bool exceedsStdDev = (rmsArcsec > target.GuideRmsMedian + (3.0 * target.GuideRmsStdDev));
+                    bool exceedsMultiplier = (rmsArcsec > target.GuideRmsMedian * 2.0);
+                    if ((exceedsStdDev || exceedsMultiplier) && rmsArcsec > minRmsFloor) {
                         isBad = true;
                         reasons.Add($"Guiding RMS Spike ({rmsArcsec:F2}\" vs Median {target.GuideRmsMedian:F2}\")");
                         target.BadRmsCount++;

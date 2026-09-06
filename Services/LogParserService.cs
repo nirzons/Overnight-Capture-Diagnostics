@@ -135,7 +135,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             @"Platesolving with parameters:\s*FocalLength:\s*(?<FocalLength>[\d\.,]+)\s*PixelSize:\s*(?<PixelSize>[\d\.,]+)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token, string? overrideLogDir = null, bool enableDebugLogging = false) {
+        public SessionData ParseLogFiles(string? sessionDateFilter, CancellationToken token, string? overrideLogDir = null, bool enableDebugLogging = false, string? explicitFilePattern = null) {
             var sessionData = new SessionData();
 
             var logDirectories = new List<string>();
@@ -196,11 +196,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             var allPolar = new List<PolarAlignmentRecord>();
             var rawProfiles = new List<EquipmentProfileRecord>();
             var seenFrameKeys = new HashSet<string>();
+            EquipmentDetails? lastActiveEq = null;
 
             foreach (var logFile in selectedLogFiles) {
                 token.ThrowIfCancellationRequested();
 
-                var currentLogEq = new EquipmentDetails();
+                var currentLogEq = lastActiveEq != null ? lastActiveEq.Clone() : new EquipmentDetails();
                 DateTime fileStart = default;
                 DateTime fileEnd = default;
 
@@ -272,11 +273,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         if (mOpt.Success) {
                             double focal = ParseDouble(mOpt.Groups["FocalLength"].Value);
                             double pxSize = ParseDouble(mOpt.Groups["PixelSize"].Value);
-                            if (focal > 0) currentLogEq.FocalLengthMm = focal;
-                            if (pxSize > 0) currentLogEq.PixelSizeMicrons = pxSize;
+                            if (focal > 0 && currentLogEq.FocalLengthMm == 0) currentLogEq.FocalLengthMm = focal;
+                            if (pxSize > 0 && currentLogEq.PixelSizeMicrons == 0) currentLogEq.PixelSizeMicrons = pxSize;
 
-                            if (sessionData.Equipment.FocalLengthMm == 0) sessionData.Equipment.FocalLengthMm = focal;
-                            if (sessionData.Equipment.PixelSizeMicrons == 0) sessionData.Equipment.PixelSizeMicrons = pxSize;
+                            if (sessionData.Equipment.FocalLengthMm == 0 && focal > 0) sessionData.Equipment.FocalLengthMm = focal;
+                            if (sessionData.Equipment.PixelSizeMicrons == 0 && pxSize > 0) sessionData.Equipment.PixelSizeMicrons = pxSize;
                             continue;
                         }
 
@@ -381,7 +382,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                             seenFrameKeys.Add(fullPath);
 
-                            string ninaPattern = NinaFilePatternParserService.DiscoverPatternFromDisk(overrideLogDir, enableDebugLogging);
+                            string ninaPattern = !string.IsNullOrWhiteSpace(explicitFilePattern)
+                                ? explicitFilePattern
+                                : NinaFilePatternParserService.DiscoverPatternFromDisk(overrideLogDir, enableDebugLogging);
                             var dynamicTelem = NinaFilePatternParserService.ParsePathWithPattern(fullPath, ninaPattern, enableDebugLogging);
 
                             double expSecs, hfr, parsedRms;
@@ -678,6 +681,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     EndTime = fileEnd,
                     Equipment = currentLogEq
                 });
+                lastActiveEq = currentLogEq;
             }
 
             // Ingestion of AutoFocus JSON files
@@ -708,13 +712,36 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sessionData.SessionEnd = trueSessionEnd;
             }
 
+            // Merge adjacent raw profiles with the same camera / equipment (e.g. across midnight log rolls)
+            var mergedProfiles = new List<EquipmentProfileRecord>();
+            foreach (var prof in rawProfiles) {
+                if (!mergedProfiles.Any()) {
+                    mergedProfiles.Add(prof);
+                } else {
+                    var last = mergedProfiles.Last();
+                    bool sameCamera = (last.Equipment.CameraName == prof.Equipment.CameraName && prof.Equipment.CameraName != "Not Connected");
+                    bool isContinuous = (prof.StartTime - last.EndTime).TotalMinutes <= 45.0;
+                    if (sameCamera && isContinuous) {
+                        last.EndTime = prof.EndTime;
+                        if (last.Equipment.FocalLengthMm == 0 && prof.Equipment.FocalLengthMm > 0) last.Equipment.FocalLengthMm = prof.Equipment.FocalLengthMm;
+                        if (last.Equipment.PixelSizeMicrons == 0 && prof.Equipment.PixelSizeMicrons > 0) last.Equipment.PixelSizeMicrons = prof.Equipment.PixelSizeMicrons;
+                        if (last.Equipment.CameraWidth == 0 && prof.Equipment.CameraWidth > 0) last.Equipment.CameraWidth = prof.Equipment.CameraWidth;
+                        if (last.Equipment.CameraHeight == 0 && prof.Equipment.CameraHeight > 0) last.Equipment.CameraHeight = prof.Equipment.CameraHeight;
+                    } else {
+                        mergedProfiles.Add(prof);
+                    }
+                }
+            }
+
             // Filter equipment sub-sessions to ONLY include those where frame capturing occurred
             var frameCapturingProfiles = new List<EquipmentProfileRecord>();
             int subIndex = 1;
-            foreach (var prof in rawProfiles) {
-                bool hasFrames = allFrames.Any(f => f.Timestamp >= prof.StartTime && f.Timestamp <= prof.EndTime);
-                if (hasFrames && prof.Equipment.CameraName != "Not Connected") {
+            foreach (var prof in mergedProfiles) {
+                var matchingFrames = allFrames.Where(f => f.Timestamp >= prof.StartTime && f.Timestamp <= prof.EndTime).ToList();
+                if (matchingFrames.Any() && prof.Equipment.CameraName != "Not Connected") {
                     prof.ProfileName = $"Sub-Session {subIndex++}: {prof.Equipment.CameraName}";
+                    prof.StartTime = matchingFrames.Min(f => f.Timestamp);
+                    prof.EndTime = matchingFrames.Max(f => f.Timestamp);
                     frameCapturingProfiles.Add(prof);
                 }
             }
@@ -960,9 +987,15 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     }
                 }
 
-                // RMS: e.g. RMS0.24
-                if (t.StartsWith("RMS", StringComparison.OrdinalIgnoreCase)) {
-                    string rmsNum = t.Substring(3).TrimStart('_').Replace(',', '.');
+                // RMS: e.g. RMS0.24, RMS_0.24, RMS-0.24, 0.24RMS, 0.24_RMS, 0.24"
+                var mRms = Regex.Match(t, @"^(?:RMS|GUIDE|G)?[-_:]?([\d\.,]+)(?:RMS|GUIDE|arcsec|""|px)?$", RegexOptions.IgnoreCase);
+                if (mRms.Success && (t.IndexOf("RMS", StringComparison.OrdinalIgnoreCase) >= 0 || t.IndexOf("GUIDE", StringComparison.OrdinalIgnoreCase) >= 0 || t.EndsWith("\"") || t.EndsWith("arcsec", StringComparison.OrdinalIgnoreCase))) {
+                    if (double.TryParse(mRms.Groups[1].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double rmsVal) && rmsVal > 0 && rmsVal <= 20.0) {
+                        rms = rmsVal;
+                        continue;
+                    }
+                } else if (t.StartsWith("RMS", StringComparison.OrdinalIgnoreCase)) {
+                    string rmsNum = t.Substring(3).TrimStart('_', '-').Replace(',', '.');
                     if (double.TryParse(rmsNum, NumberStyles.Any, CultureInfo.InvariantCulture, out double rmsVal)) {
                         rms = rmsVal;
                         continue;
@@ -977,7 +1010,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         continue;
                     }
                 } else if (t.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase)) {
-                    string tempStr = t.Substring(4).TrimStart('_').Replace(',', '.');
+                    string tempStr = t.Substring(4).TrimStart('_', '-').Replace(',', '.');
                     if (double.TryParse(tempStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double tVal)) {
                         sensorTemp = tVal;
                         continue;
@@ -1024,8 +1057,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         continue;
                     }
 
-                    // RMS (small float at the end of token list, e.g. 0.05 to 5.0)
-                    if (rms == 0 && item.val > 0 && item.val <= 5.0 && item.idx == numericTokens.Last().idx) {
+                    // RMS (small float, e.g. 0.05 to 5.0)
+                    if (rms == 0 && item.val > 0.01 && item.val <= 5.0 && item.val != hfr && item.val != expSecs) {
                         rms = item.val;
                         continue;
                     }
@@ -1049,8 +1082,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
         private class PhdSample {
             public DateTime Timestamp { get; set; }
-            public double Dx { get; set; }
-            public double Dy { get; set; }
+            public double RaArcsec { get; set; }
+            public double DecArcsec { get; set; }
         }
 
         private static void IngestPhd2GuidingData(SessionData sessionData, List<FileInfo> allLogFiles, List<FrameRecord> allFrames) {
@@ -1094,6 +1127,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                         bool inGuideSection = false;
                         DateTime guideSessionStart = default;
                         DateTime lastGuideTime = default;
+                        double guideScale = 1.0;
 
                         while ((line = sr.ReadLine()) != null) {
                             if (line.StartsWith("Guiding Begins at", StringComparison.OrdinalIgnoreCase)) {
@@ -1114,6 +1148,13 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                 continue;
                             }
 
+                            if (line.StartsWith("# Pixel scale =", StringComparison.OrdinalIgnoreCase) || line.Contains("Pixel scale =")) {
+                                var mScale = Regex.Match(line, @"Pixel\s*scale\s*=\s*([\d\.,]+)", RegexOptions.IgnoreCase);
+                                if (mScale.Success && double.TryParse(mScale.Groups[1].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedScale) && parsedScale > 0) {
+                                    guideScale = parsedScale;
+                                }
+                            }
+
                             if (line.Contains("INFO: DITHER by", StringComparison.OrdinalIgnoreCase)) {
                                 if (lastGuideTime != default) {
                                     sessionData.DitherEvents.Add(new DitherRecord {
@@ -1127,7 +1168,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                             if (!inGuideSection || line.StartsWith("Frame") || line.StartsWith("#")) continue;
 
                             string[] parts = line.Split(',');
-                            if (parts.Length >= 6) {
+                            if (parts.Length >= 5) {
                                 DateTime gTime = default;
                                 if (DateTime.TryParse(parts[1].Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedGTime)) {
                                     gTime = parsedGTime;
@@ -1137,10 +1178,32 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                                 if (gTime != default) {
                                     lastGuideTime = gTime;
-                                    double dx = ParseDouble(parts[4]);
-                                    double dy = ParseDouble(parts[5]);
-                                    if (dx != 0 || dy != 0) {
-                                        allSamples.Add(new PhdSample { Timestamp = gTime, Dx = dx, Dy = dy });
+                                    double raArcsec = 0;
+                                    double decArcsec = 0;
+                                    bool valid = false;
+
+                                    if (parts.Length >= 7) {
+                                        double ra = ParseDouble(parts[5]);
+                                        double dec = ParseDouble(parts[6]);
+                                        if (Math.Abs(ra) < 15.0 && Math.Abs(dec) < 15.0 && (ra != 0 || dec != 0)) {
+                                            raArcsec = ra;
+                                            decArcsec = dec;
+                                            valid = true;
+                                        }
+                                    }
+
+                                    if (!valid && parts.Length >= 5) {
+                                        double dx = ParseDouble(parts[3]);
+                                        double dy = ParseDouble(parts[4]);
+                                        if (Math.Abs(dx) < 10.0 && Math.Abs(dy) < 10.0 && (dx != 0 || dy != 0)) {
+                                            raArcsec = dx * guideScale;
+                                            decArcsec = dy * guideScale;
+                                            valid = true;
+                                        }
+                                    }
+
+                                    if (valid) {
+                                        allSamples.Add(new PhdSample { Timestamp = gTime, RaArcsec = raArcsec, DecArcsec = decArcsec });
                                     }
                                 }
                             }
@@ -1239,8 +1302,6 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                 if (!allSamples.Any()) return;
 
-                double pxScale = sessionData.Equipment.PixelScaleArcsec > 0 ? sessionData.Equipment.PixelScaleArcsec : 2.15;
-
                 foreach (var frame in lightFrames) {
                     DateTime frameStart = frame.Timestamp.AddSeconds(-frame.ExposureSeconds);
                     DateTime frameEnd = frame.Timestamp;
@@ -1252,14 +1313,14 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
 
                     var frameSamples = allSamples.Where(s => s.Timestamp >= frameStart && s.Timestamp <= frameEnd).ToList();
                     if (frameSamples.Any()) {
-                        double raRmsSum = frameSamples.Sum(s => s.Dx * s.Dx);
-                        double decRmsSum = frameSamples.Sum(s => s.Dy * s.Dy);
-                        double totRmsSum = frameSamples.Sum(s => (s.Dx * s.Dx) + (s.Dy * s.Dy));
+                        double raRmsSum = frameSamples.Sum(s => s.RaArcsec * s.RaArcsec);
+                        double decRmsSum = frameSamples.Sum(s => s.DecArcsec * s.DecArcsec);
+                        double totRmsSum = frameSamples.Sum(s => (s.RaArcsec * s.RaArcsec) + (s.DecArcsec * s.DecArcsec));
                         int count = frameSamples.Count;
 
-                        frame.GuideRaRms = Math.Sqrt(raRmsSum / count) * pxScale;
-                        frame.GuideDecRms = Math.Sqrt(decRmsSum / count) * pxScale;
-                        frame.GuideTotalRms = Math.Sqrt(totRmsSum / count) * pxScale;
+                        frame.GuideRaRms = Math.Sqrt(raRmsSum / count);
+                        frame.GuideDecRms = Math.Sqrt(decRmsSum / count);
+                        frame.GuideTotalRms = Math.Sqrt(totRmsSum / count);
                     }
                 }
             } catch { }
@@ -1431,19 +1492,48 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             return raw.Replace("\uFFFD", "°");
         }
 
-        private static readonly Regex RegexAngleString = new Regex(@"(?<sign>[-+])?(?<deg>\d+)[^\d]+(?<min>\d+)'\s*(?<sec>\d+)?\""", RegexOptions.Compiled);
+        private static readonly Regex RegexAngleWithDeg = new Regex(
+            @"(?<sign>[-+])?\s*(?<deg>\d+)\s*[°\uFFFD\s]+\s*(?<min>\d+)\s*'\s*(?:(?<sec>\d+)\s*\"")?", 
+            RegexOptions.Compiled);
+
+        private static readonly Regex RegexAngleMinSec = new Regex(
+            @"(?<sign>[-+])?\s*(?<min>\d+)\s*'\s*(?:(?<sec>\d+)\s*\"")?", 
+            RegexOptions.Compiled);
+
+        private static readonly Regex RegexAngleDecimalArcmin = new Regex(
+            @"(?<sign>[-+])?\s*(?<val>[\d\.,]+)\s*'", 
+            RegexOptions.Compiled);
 
         private static double ParseAngleStringToArcmin(string angle) {
             if (string.IsNullOrWhiteSpace(angle)) return 0.0;
-            var match = RegexAngleString.Match(angle);
-            if (match.Success) {
-                int deg = ParseInt(match.Groups["deg"].Value);
-                int min = ParseInt(match.Groups["min"].Value);
-                int sec = ParseInt(match.Groups["sec"].Value);
-                double arcmin = deg * 60.0 + min + (sec / 60.0);
-                if (match.Groups["sign"].Value == "-") arcmin = -arcmin;
+            string sanitized = SanitizeAngleDegreeString(angle).Trim();
+
+            var mDeg = RegexAngleWithDeg.Match(sanitized);
+            if (mDeg.Success) {
+                int deg = ParseInt(mDeg.Groups["deg"].Value);
+                int min = ParseInt(mDeg.Groups["min"].Value);
+                int sec = ParseInt(mDeg.Groups["sec"].Value);
+                double arcmin = (deg * 60.0) + min + (sec / 60.0);
+                if (mDeg.Groups["sign"].Value == "-") arcmin = -arcmin;
                 return arcmin;
             }
+
+            var mMinSec = RegexAngleMinSec.Match(sanitized);
+            if (mMinSec.Success) {
+                int min = ParseInt(mMinSec.Groups["min"].Value);
+                int sec = ParseInt(mMinSec.Groups["sec"].Value);
+                double arcmin = min + (sec / 60.0);
+                if (mMinSec.Groups["sign"].Value == "-") arcmin = -arcmin;
+                return arcmin;
+            }
+
+            var mDec = RegexAngleDecimalArcmin.Match(sanitized);
+            if (mDec.Success) {
+                double val = ParseDouble(mDec.Groups["val"].Value);
+                if (mDec.Groups["sign"].Value == "-") val = -val;
+                return val;
+            }
+
             return 0.0;
         }
 

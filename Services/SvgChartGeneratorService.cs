@@ -413,6 +413,304 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             return svg.ToString();
         }
 
+        public string GenerateEnvironmentalSvg(List<WeatherSample> rawSamples, DateTime sessionStart, DateTime sessionEnd, int width = 900, int height = 280) {
+            var validSamples = rawSamples
+                .Where(s => (!double.IsNaN(s.AmbientTemperature) && s.AmbientTemperature > -60 && s.AmbientTemperature < 80) ||
+                            (!double.IsNaN(s.Humidity) && s.Humidity > 0 && s.Humidity <= 100) ||
+                            (!double.IsNaN(s.DewPoint) && s.DewPoint > -60 && s.DewPoint < 80) ||
+                            (s.PowerWatts.HasValue && s.PowerWatts.Value >= 0) ||
+                            (s.DewHeaterDuty.HasValue && s.DewHeaterDuty.Value >= 0))
+                .OrderBy(s => s.Timestamp)
+                .ToList();
+
+            if (validSamples.Count < 2) return string.Empty;
+
+            var samples = SessionStatsCalculator.DecimateSamples(validSamples, 80, s => s.Timestamp);
+            if (samples.Count < 2) return string.Empty;
+
+            bool hasPower = samples.Any(s => s.PowerWatts.HasValue && s.PowerWatts.Value > 0);
+
+            // Compute Temperature Limits (encompassing both Ambient and Dew Point)
+            var allTemps = samples
+                .SelectMany(s => new[] { s.AmbientTemperature, s.DewPoint })
+                .Where(t => !double.IsNaN(t) && t > -60 && t < 80)
+                .ToList();
+
+            bool hasTemps = allTemps.Any();
+
+            var svg = new XElement(SvgNs + "svg",
+                new XAttribute("xmlns", SvgNs.NamespaceName),
+                new XAttribute("width", "100%"),
+                new XAttribute("height", height),
+                new XAttribute("viewBox", $"0 0 {width} {height}"),
+                new XAttribute("style", "background-color: #121824; border-radius: 8px;")
+            );
+
+            // Title
+            string titleText = hasPower && hasTemps
+                ? "🌡️⚡ Environmental & Power Profile (Temperature, Dew Point, Humidity & Power Draw)"
+                : (hasPower
+                    ? "⚡ Power & Energy Profile (Instantaneous Power Draw in Watts)"
+                    : "🌡️ Environmental Profile (Temperature vs. Humidity & Dew Point)");
+
+            svg.Add(new XElement(SvgNs + "text",
+                new XAttribute("x", 40),
+                new XAttribute("y", 25),
+                new XAttribute("fill", "#E0E6ED"),
+                new XAttribute("font-size", "14"),
+                new XAttribute("font-weight", "bold"),
+                new XAttribute("font-family", "Segoe UI, sans-serif"),
+                titleText
+            ));
+
+            DateTime startTime = samples.Min(s => s.Timestamp);
+            DateTime endTime = samples.Max(s => s.Timestamp);
+            double totalSeconds = (endTime - startTime).TotalSeconds;
+            if (totalSeconds <= 0) totalSeconds = 1;
+
+            double pLeft = 60, pRight = 70, pTop = 45, pBottom = 65;
+            double drawW = width - pLeft - pRight;
+            double drawH = height - pTop - pBottom;
+
+            double minTemp = hasTemps ? Math.Floor(allTemps.Min() - 1.5) : 0;
+            double maxTemp = hasTemps ? Math.Ceiling(allTemps.Max() + 1.5) : 30;
+            if (maxTemp <= minTemp) maxTemp = minTemp + 5;
+            double tempRange = maxTemp - minTemp;
+
+            // Humidity & Power Range: 0 to 100 (% / Watts)
+            double minRightScale = 0;
+            double rightScaleRange = 100;
+
+            // Render Time Ticks & Grid Lines along X-Axis
+            int numTicks = 5;
+            for (int t = 0; t <= numTicks; t++) {
+                double fraction = (double)t / numTicks;
+                double xTick = pLeft + (fraction * drawW);
+                DateTime tickTime = startTime.AddSeconds(fraction * totalSeconds);
+
+                svg.Add(new XElement(SvgNs + "line",
+                    new XAttribute("x1", xTick.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y1", pTop),
+                    new XAttribute("x2", xTick.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y2", pTop + drawH),
+                    new XAttribute("stroke", "#1E293B"),
+                    new XAttribute("stroke-width", "1"),
+                    new XAttribute("stroke-dasharray", "3,3")
+                ));
+
+                svg.Add(new XElement(SvgNs + "text",
+                    new XAttribute("x", xTick.ToString("F1", CultureInfo.InvariantCulture)),
+                    new XAttribute("y", pTop + drawH + 18),
+                    new XAttribute("fill", "#94A3B8"),
+                    new XAttribute("font-size", "11"),
+                    new XAttribute("font-family", "Segoe UI, sans-serif"),
+                    new XAttribute("text-anchor", "middle"),
+                    tickTime.ToString("HH:mm")
+                ));
+            }
+
+            var tempPoints = new List<string>();
+            var dewPoints = new List<string>();
+            var humPoints = new List<string>();
+            var powerPoints = new List<string>();
+            var heaterPoints = new List<string>();
+
+            var heaterSamples = samples.Where(s => s.DewHeaterDuty.HasValue).Select(s => s.DewHeaterDuty!.Value).ToList();
+            bool hasDynamicHeater = heaterSamples.Any() && (heaterSamples.Max() - heaterSamples.Min() > 0.01) && (heaterSamples.Max() > 0);
+
+            foreach (var s in samples) {
+                double sec = (s.Timestamp - startTime).TotalSeconds;
+                double x = pLeft + ((sec / totalSeconds) * drawW);
+
+                // Ambient Temp Point
+                if (!double.IsNaN(s.AmbientTemperature) && s.AmbientTemperature > -60 && s.AmbientTemperature < 80) {
+                    double yTemp = pTop + drawH - (((s.AmbientTemperature - minTemp) / tempRange) * drawH);
+                    tempPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yTemp.ToString("F1", CultureInfo.InvariantCulture)}");
+                }
+
+                // Dew Point
+                if (!double.IsNaN(s.DewPoint) && s.DewPoint > -60 && s.DewPoint < 80) {
+                    double yDew = pTop + drawH - (((s.DewPoint - minTemp) / tempRange) * drawH);
+                    dewPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yDew.ToString("F1", CultureInfo.InvariantCulture)}");
+                }
+
+                // Humidity Point
+                if (!double.IsNaN(s.Humidity) && s.Humidity > 0 && s.Humidity <= 100) {
+                    double yHum = pTop + drawH - (((s.Humidity - minRightScale) / rightScaleRange) * drawH);
+                    humPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yHum.ToString("F1", CultureInfo.InvariantCulture)}");
+                }
+
+                // Power Point (Watts)
+                if (s.PowerWatts.HasValue && s.PowerWatts.Value >= 0) {
+                    double clampedPower = Math.Min(100.0, s.PowerWatts.Value);
+                    double yPower = pTop + drawH - (((clampedPower - minRightScale) / rightScaleRange) * drawH);
+                    powerPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yPower.ToString("F1", CultureInfo.InvariantCulture)}");
+                }
+
+                // Dew Heater Duty Point (Pink / Coral)
+                if (hasDynamicHeater && s.DewHeaterDuty.HasValue) {
+                    double clampedHeater = Math.Clamp(s.DewHeaterDuty.Value, 0.0, 100.0);
+                    double yHeater = pTop + drawH - (((clampedHeater - minRightScale) / rightScaleRange) * drawH);
+                    heaterPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yHeater.ToString("F1", CultureInfo.InvariantCulture)}");
+                }
+
+                // Dew Risk Highlight (Circle if Ambient - DewPoint < 2.5)
+                if (!double.IsNaN(s.AmbientTemperature) && !double.IsNaN(s.DewPoint)) {
+                    double margin = s.AmbientTemperature - s.DewPoint;
+                    if (margin < 2.5 && margin >= -20) {
+                        double yTemp = pTop + drawH - (((s.AmbientTemperature - minTemp) / tempRange) * drawH);
+                        svg.Add(new XElement(SvgNs + "circle",
+                            new XAttribute("cx", x.ToString("F1", CultureInfo.InvariantCulture)),
+                            new XAttribute("cy", yTemp.ToString("F1", CultureInfo.InvariantCulture)),
+                            new XAttribute("r", "3.5"),
+                            new XAttribute("fill", "#EF4444"),
+                            new XAttribute("opacity", "0.85")
+                        ));
+                    }
+                }
+            }
+
+            // Power Draw Polyline (Gold Dash-Dot)
+            if (powerPoints.Count >= 2) {
+                svg.Add(new XElement(SvgNs + "polyline",
+                    new XAttribute("points", string.Join(" ", powerPoints)),
+                    new XAttribute("fill", "none"),
+                    new XAttribute("stroke", "#FACC15"),
+                    new XAttribute("stroke-width", "2.0"),
+                    new XAttribute("stroke-dasharray", "6,2,2,2")
+                ));
+            }
+
+            // Dew Heater Polyline (Pink / Coral Dotted - if dynamic)
+            if (heaterPoints.Count >= 2) {
+                svg.Add(new XElement(SvgNs + "polyline",
+                    new XAttribute("points", string.Join(" ", heaterPoints)),
+                    new XAttribute("fill", "none"),
+                    new XAttribute("stroke", "#EC4899"),
+                    new XAttribute("stroke-width", "2.0"),
+                    new XAttribute("stroke-dasharray", "3,3")
+                ));
+            }
+
+            // Relative Humidity Polyline (Purple Dashed)
+            if (humPoints.Count >= 2) {
+                svg.Add(new XElement(SvgNs + "polyline",
+                    new XAttribute("points", string.Join(" ", humPoints)),
+                    new XAttribute("fill", "none"),
+                    new XAttribute("stroke", "#818CF8"),
+                    new XAttribute("stroke-width", "2.0"),
+                    new XAttribute("stroke-dasharray", "4,3")
+                ));
+            }
+
+            // Dew Point Polyline (Teal / Cyan)
+            if (dewPoints.Count >= 2) {
+                svg.Add(new XElement(SvgNs + "polyline",
+                    new XAttribute("points", string.Join(" ", dewPoints)),
+                    new XAttribute("fill", "none"),
+                    new XAttribute("stroke", "#06B6D4"),
+                    new XAttribute("stroke-width", "2.0")
+                ));
+            }
+
+            // Ambient Temperature Polyline (Amber / Orange)
+            if (tempPoints.Count >= 2) {
+                svg.Add(new XElement(SvgNs + "polyline",
+                    new XAttribute("points", string.Join(" ", tempPoints)),
+                    new XAttribute("fill", "none"),
+                    new XAttribute("stroke", "#F59E0B"),
+                    new XAttribute("stroke-width", "2.5")
+                ));
+            }
+
+            // Left Y-Axis Labels (Temperature °C - only if temperature telemetry is present)
+            if (hasTemps) {
+                svg.Add(new XElement(SvgNs + "text",
+                    new XAttribute("x", pLeft - 8),
+                    new XAttribute("y", pTop + 10),
+                    new XAttribute("fill", "#F59E0B"),
+                    new XAttribute("font-size", "11"),
+                    new XAttribute("font-weight", "bold"),
+                    new XAttribute("font-family", "Segoe UI, sans-serif"),
+                    new XAttribute("text-anchor", "end"),
+                    $"{maxTemp:F1}°C"
+                ));
+
+                svg.Add(new XElement(SvgNs + "text",
+                    new XAttribute("x", pLeft - 8),
+                    new XAttribute("y", pTop + drawH),
+                    new XAttribute("fill", "#F59E0B"),
+                    new XAttribute("font-size", "11"),
+                    new XAttribute("font-weight", "bold"),
+                    new XAttribute("font-family", "Segoe UI, sans-serif"),
+                    new XAttribute("text-anchor", "end"),
+                    $"{minTemp:F1}°C"
+                ));
+            }
+
+            // Right Y-Axis Labels (Humidity % / Power W)
+            string topLabel = (hasTemps && hasPower) ? "100% / 100W" : (hasPower ? "100W" : "100%");
+            string bottomLabel = (hasTemps && hasPower) ? "0% / 0W" : (hasPower ? "0W" : "0%");
+
+            svg.Add(new XElement(SvgNs + "text",
+                new XAttribute("x", width - pRight + 8),
+                new XAttribute("y", pTop + 10),
+                new XAttribute("fill", "#818CF8"),
+                new XAttribute("font-size", "11"),
+                new XAttribute("font-weight", "bold"),
+                new XAttribute("font-family", "Segoe UI, sans-serif"),
+                new XAttribute("text-anchor", "start"),
+                topLabel
+            ));
+
+            svg.Add(new XElement(SvgNs + "text",
+                new XAttribute("x", width - pRight + 8),
+                new XAttribute("y", pTop + drawH),
+                new XAttribute("fill", "#818CF8"),
+                new XAttribute("font-size", "11"),
+                new XAttribute("font-weight", "bold"),
+                new XAttribute("font-family", "Segoe UI, sans-serif"),
+                new XAttribute("text-anchor", "start"),
+                bottomLabel
+            ));
+
+            // Legend
+            double legendY = height - 12;
+            if (hasTemps) {
+                if (hasDynamicHeater) {
+                    AddLegendItem(svg, 10, legendY, "#F59E0B", "Ambient Temp (°C)");
+                    AddLegendItem(svg, 150, legendY, "#06B6D4", "Dew Point (°C)");
+                    AddLegendItem(svg, 275, legendY, "#818CF8", "Humidity (%)");
+                    if (hasPower) {
+                        AddLegendItem(svg, 395, legendY, "#FACC15", "Power (W)");
+                        AddLegendItem(svg, 495, legendY, "#EC4899", "Dew Heater (%)");
+                        AddLegendItem(svg, 640, legendY, "#EF4444", "Dew Risk (<2.5°C)");
+                    } else {
+                        AddLegendItem(svg, 400, legendY, "#EC4899", "Dew Heater (%)");
+                        AddLegendItem(svg, 560, legendY, "#EF4444", "Dew Risk (<2.5°C)");
+                    }
+                } else if (hasPower) {
+                    AddLegendItem(svg, 20, legendY, "#F59E0B", "Ambient Temp (°C)");
+                    AddLegendItem(svg, 180, legendY, "#06B6D4", "Dew Point (°C)");
+                    AddLegendItem(svg, 330, legendY, "#818CF8", "Humidity (%)");
+                    AddLegendItem(svg, 480, legendY, "#FACC15", "Power Draw (W)");
+                    AddLegendItem(svg, 660, legendY, "#EF4444", "Dew Risk (<2.5°C)");
+                } else {
+                    AddLegendItem(svg, 40, legendY, "#F59E0B", "Ambient Temp (°C) - Left Axis");
+                    AddLegendItem(svg, 250, legendY, "#06B6D4", "Dew Point (°C) - Left Axis");
+                    AddLegendItem(svg, 430, legendY, "#818CF8", "Humidity (%) - Right Axis (Dashed)");
+                    AddLegendItem(svg, 670, legendY, "#EF4444", "Dew Risk Zone (<2.5°C)");
+                }
+            } else if (hasPower) {
+                AddLegendItem(svg, 200, legendY, "#FACC15", "⚡ Instantaneous Power Draw (Watts)");
+                if (hasDynamicHeater) {
+                    AddLegendItem(svg, 480, legendY, "#EC4899", "Dew Heater Duty (%)");
+                }
+            }
+
+            return svg.ToString();
+        }
+
         private static void AddLegendItem(XElement svg, double x, double y, string color, string label) {
             svg.Add(new XElement(SvgNs + "rect",
                 new XAttribute("x", x),

@@ -29,7 +29,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             string lastLightStr = session.LastLightTimestamp.HasValue ? session.LastLightTimestamp.Value.ToString("yyyy-MM-dd HH:mm:ss") : "N/A";
 
             var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.5.0";
+            string versionStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}.{ver.Revision}" : "v1.0.6.3";
 
             string duskDawnBanner = (session.AstroDusk.HasValue && session.AstroDawn.HasValue)
                 ? $"{session.AstroDusk.Value:HH:mm} — {session.AstroDawn.Value:HH:mm} ({FormatTimeSpan(session.AstroDarknessDuration)})"
@@ -56,6 +56,26 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             sb.AppendLine("---");
             sb.AppendLine();
 
+            // Calculate Session-Wide Sensor Temperature Median
+            var lightFrameTemps = session.Targets
+                .SelectMany(t => t.Frames)
+                .Where(f => !f.IsCalibrationFrame && f.CameraTemperature.HasValue)
+                .Select(f => f.CameraTemperature!.Value)
+                .OrderBy(t => t)
+                .ToList();
+
+            double coolingMedian;
+            if (lightFrameTemps.Any()) {
+                int mid = lightFrameTemps.Count / 2;
+                coolingMedian = (lightFrameTemps.Count % 2 == 0)
+                    ? (lightFrameTemps[mid - 1] + lightFrameTemps[mid]) / 2.0
+                    : lightFrameTemps[mid];
+            } else if (session.Equipment.CameraTempSetpoint != 0) {
+                coolingMedian = session.Equipment.CameraTempSetpoint;
+            } else {
+                coolingMedian = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? 0;
+            }
+
             sb.AppendLine("## ⚙️ Equipment & Optical Profile");
             if (session.EquipmentProfiles.Count > 1) {
                 foreach (var prof in session.EquipmentProfiles) {
@@ -64,9 +84,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("| Category | Device / Property | Details |");
                     sb.AppendLine("| :--- | :--- | :--- |");
                     sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
-                    if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
-                        double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
-                        sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
+                    if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
+                        sb.AppendLine($"| **Cooling** | Median Temp | **{coolingMedian:F1}°C** |");
                     }
                     sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                     sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
@@ -80,9 +99,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 sb.AppendLine("| Category | Device / Property | Details |");
                 sb.AppendLine("| :--- | :--- | :--- |");
                 sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
-                if (session.Equipment.CameraTempSetpoint != 0 || session.Targets.Any(t => t.SensorTempMedian.HasValue)) {
-                    double medianTarget = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? session.Equipment.CameraTempSetpoint;
-                    sb.AppendLine($"| **Cooling** | Median Temp | **{medianTarget:F1}°C** |");
+                if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
+                    sb.AppendLine($"| **Cooling** | Median Temp | **{coolingMedian:F1}°C** |");
                 }
                 sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                 sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
@@ -132,12 +150,27 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             if (storageGb > 0) {
                 sb.AppendLine($"- **Estimated Storage Consumed:** **{storageGb:F2} GB** ({session.Targets.Sum(t => t.Frames.Count)} total frames)");
             }
+            if (session.TelemetrySamples.Any(s => s.PowerWatts.HasValue || s.CurrentAmps.HasValue || s.Voltage.HasValue) || session.TotalPowerConsumedWh > 0) {
+                string voltStr = session.AverageVoltage > 0 ? $" @ {session.AverageVoltage:F1}V avg" : "";
+                string peakStr = session.PeakPowerWatts > 0 ? $" | Peak: {session.PeakPowerWatts:F1} W" : "";
+                sb.AppendLine($"- **⚡ Total Power Consumed:** **{session.TotalPowerConsumedWh:F1} Wh** (~{session.TotalPowerConsumedAh:F1} Ah{voltStr}{peakStr})");
+            }
             sb.AppendLine();
 
             var liveSessionErrors = session.HardwareErrors.Where(err => {
-                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                var errTime = err.Timestamp;
                 var errEnd = err.EndTimestamp ?? err.Timestamp;
-                return errEnd >= session.FirstLightTimestamp.Value && err.Timestamp <= session.LastLightTimestamp.Value;
+
+                if (session.Targets.Any()) {
+                    return session.Targets.Any(t => {
+                        var tStart = t.StartTime.AddMinutes(-5);
+                        var tEnd = t.EndTime.AddMinutes(5);
+                        return errEnd >= tStart && errTime <= tEnd;
+                    });
+                }
+
+                if (!session.FirstLightTimestamp.HasValue || !session.LastLightTimestamp.HasValue) return true;
+                return errEnd >= session.FirstLightTimestamp.Value && errTime <= session.LastLightTimestamp.Value;
             }).ToList();
 
             if (liveSessionErrors.Any()) {
@@ -176,8 +209,23 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 if (session.SqmAvg > 0) {
                     sb.AppendLine($"| **SQM Sky Quality** | -- | -- | **{session.SqmAvg:F2} mag/arcsec²** | Sky Brightness |");
                 }
-                sb.AppendLine($"| **Dew Heater Status** | -- | -- | **{session.DewHeaterStatus}** | Duty Cycle |");
+                if (session.DewHeaterAvg.HasValue) {
+                    string status = (session.DewHeaterMin.HasValue && session.DewHeaterMax.HasValue && Math.Abs(session.DewHeaterMin.Value - session.DewHeaterMax.Value) < 0.01)
+                        ? "Constant" 
+                        : "Active (Dynamic)";
+                    sb.AppendLine($"| **Dew Heater Duty (%)** | {session.DewHeaterMin:F0}% | {session.DewHeaterMax:F0}% | **{session.DewHeaterAvg:F0}%** | {status} |");
+                } else if (!string.IsNullOrWhiteSpace(session.DewHeaterStatus) && session.DewHeaterStatus != "Not Monitored") {
+                    sb.AppendLine($"| **Dew Heater Status** | -- | -- | **{session.DewHeaterStatus}** | Constant |");
+                }
                 sb.AppendLine();
+
+                string envSvg = chartService.GenerateEnvironmentalSvg(session.WeatherSamples, session.SessionStart, session.SessionEnd);
+                if (!string.IsNullOrEmpty(envSvg)) {
+                    sb.AppendLine("<div align=\"center\">");
+                    sb.AppendLine(envSvg);
+                    sb.AppendLine("</div>");
+                    sb.AppendLine();
+                }
             }
 
             sb.AppendLine("---");
