@@ -342,11 +342,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                         try {
                             string csvPath = Path.Combine(targetDir, $"OCD_Telemetry_{timestampStr}.csv");
                             var csvLines = new List<string> {
-                                "Timestamp,Voltage_V,Current_A,Power_W,Temp_C,Humidity_Pct,DewPoint_C,DewHeater_Pct,SQM,CloudCover_Pct"
+                                "Timestamp,Voltage_V,Current_A,Power_W,Temp_C,Humidity_Pct,DewPoint_C,DewHeater_Pct,CoolerPower_Pct,SQM,CloudCover_Pct"
                             };
                             foreach (var ts in session.TelemetrySamples.OrderBy(s => s.Timestamp)) {
                                 csvLines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2},{3},{4},{5},{6},{7},{8},{9}",
+                                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10}",
                                     ts.Timestamp,
                                     ts.Voltage.HasValue ? ts.Voltage.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "",
                                     ts.CurrentAmps.HasValue ? ts.CurrentAmps.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "",
@@ -355,6 +355,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                                     ts.Humidity.HasValue ? ts.Humidity.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "",
                                     ts.DewPoint.HasValue ? ts.DewPoint.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "",
                                     ts.DewHeaterDuty.HasValue ? ts.DewHeaterDuty.Value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) : "",
+                                    ts.CoolerPower.HasValue ? ts.CoolerPower.Value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) : "",
                                     ts.SkyQuality.HasValue ? ts.SkyQuality.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : "",
                                     ts.CloudCover.HasValue ? ts.CloudCover.Value.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) : ""
                                 ));

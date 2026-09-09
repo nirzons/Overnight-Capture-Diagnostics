@@ -5,6 +5,15 @@ All notable changes to the **Overnight Capture Diagnostics** plugin for N.I.N.A.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.6.5] - 2026-09-07
+
+### Added
+- **Power Telemetry Smoothing**: Applied a 7-minute centered rolling moving-average filter to power draw (Watts) on the Environmental & Power Profile SVG chart, eliminating Nyquist aliasing comb-spikes caused by fast-switching PWM hardware pulses while preserving real consumption trends.
+- **Chart SVG Refinement**: Removed the aliased PWM dew heater polyline from the Environmental & Power SVG chart for a cleaner diagnostic view, while keeping full raw duty cycle data in the summary table and `OCD_Telemetry.csv` export.
+- **Camera TEC Cooler Power Tracking**: Telemetry monitor now periodically records camera thermoelectric cooler duty (`CoolerPower_Pct`) across the session, presenting Min, Max, and Mean TEC load alongside the sensor temperature in the Equipment Profile table and CSV export.
+- **Thermometer Fallback Hierarchy**: Implemented prioritized ambient temperature resolution (Power Switch probe > Weather Station > Focuser probe). Setups with power switches lacking thermometers (such as Gemini Power Box) automatically utilize the telescope focuser probe for ambient temperature and dew point tracking.
+- **Updated Documentation & SVG Samples**: Updated README.md sample diagnostics and all embedded vector charts (`docs/images/`) with data directly from an authentic 10.5-hour live all-night run.
+
 ## [v1.0.6.4] - 2026-09-06
 
 ### Added

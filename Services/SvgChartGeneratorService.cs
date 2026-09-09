@@ -418,12 +418,36 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 .Where(s => (!double.IsNaN(s.AmbientTemperature) && s.AmbientTemperature > -60 && s.AmbientTemperature < 80) ||
                             (!double.IsNaN(s.Humidity) && s.Humidity > 0 && s.Humidity <= 100) ||
                             (!double.IsNaN(s.DewPoint) && s.DewPoint > -60 && s.DewPoint < 80) ||
-                            (s.PowerWatts.HasValue && s.PowerWatts.Value >= 0) ||
-                            (s.DewHeaterDuty.HasValue && s.DewHeaterDuty.Value >= 0))
+                            (s.PowerWatts.HasValue && s.PowerWatts.Value >= 0))
                 .OrderBy(s => s.Timestamp)
+                .Select(s => new WeatherSample {
+                    Timestamp = s.Timestamp,
+                    AmbientTemperature = s.AmbientTemperature,
+                    Humidity = s.Humidity,
+                    DewPoint = s.DewPoint,
+                    PowerWatts = s.PowerWatts,
+                    SkyQuality = s.SkyQuality,
+                    CloudCover = s.CloudCover
+                })
                 .ToList();
 
             if (validSamples.Count < 2) return string.Empty;
+
+            // Apply a centered rolling moving-average filter to PowerWatts (+/- 3.5 minutes) to smooth fast PWM switching aliasing
+            var powerSamples = validSamples.Where(s => s.PowerWatts.HasValue).ToList();
+            if (powerSamples.Count > 1) {
+                var smoothedPowers = new Dictionary<WeatherSample, double>();
+                foreach (var s in powerSamples) {
+                    var window = powerSamples
+                        .Where(w => Math.Abs((w.Timestamp - s.Timestamp).TotalMinutes) <= 3.5)
+                        .ToList();
+                    double avgPower = window.Average(w => w.PowerWatts!.Value);
+                    smoothedPowers[s] = avgPower;
+                }
+                foreach (var kvp in smoothedPowers) {
+                    kvp.Key.PowerWatts = kvp.Value;
+                }
+            }
 
             var samples = SessionStatsCalculator.DecimateSamples(validSamples, 80, s => s.Timestamp);
             if (samples.Count < 2) return string.Empty;
@@ -513,10 +537,6 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             var dewPoints = new List<string>();
             var humPoints = new List<string>();
             var powerPoints = new List<string>();
-            var heaterPoints = new List<string>();
-
-            var heaterSamples = samples.Where(s => s.DewHeaterDuty.HasValue).Select(s => s.DewHeaterDuty!.Value).ToList();
-            bool hasDynamicHeater = heaterSamples.Any() && (heaterSamples.Max() - heaterSamples.Min() > 0.01) && (heaterSamples.Max() > 0);
 
             foreach (var s in samples) {
                 double sec = (s.Timestamp - startTime).TotalSeconds;
@@ -540,18 +560,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     humPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yHum.ToString("F1", CultureInfo.InvariantCulture)}");
                 }
 
-                // Power Point (Watts)
+                // Power Point (Watts - Smoothed)
                 if (s.PowerWatts.HasValue && s.PowerWatts.Value >= 0) {
                     double clampedPower = Math.Min(100.0, s.PowerWatts.Value);
                     double yPower = pTop + drawH - (((clampedPower - minRightScale) / rightScaleRange) * drawH);
                     powerPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yPower.ToString("F1", CultureInfo.InvariantCulture)}");
-                }
-
-                // Dew Heater Duty Point (Pink / Coral)
-                if (hasDynamicHeater && s.DewHeaterDuty.HasValue) {
-                    double clampedHeater = Math.Clamp(s.DewHeaterDuty.Value, 0.0, 100.0);
-                    double yHeater = pTop + drawH - (((clampedHeater - minRightScale) / rightScaleRange) * drawH);
-                    heaterPoints.Add($"{x.ToString("F1", CultureInfo.InvariantCulture)},{yHeater.ToString("F1", CultureInfo.InvariantCulture)}");
                 }
 
                 // Dew Risk Highlight (Circle if Ambient - DewPoint < 2.5)
@@ -570,7 +583,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 }
             }
 
-            // Power Draw Polyline (Gold Dash-Dot)
+            // Power Draw Polyline (Gold Dash-Dot - Smoothed)
             if (powerPoints.Count >= 2) {
                 svg.Add(new XElement(SvgNs + "polyline",
                     new XAttribute("points", string.Join(" ", powerPoints)),
@@ -578,17 +591,6 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     new XAttribute("stroke", "#FACC15"),
                     new XAttribute("stroke-width", "2.0"),
                     new XAttribute("stroke-dasharray", "6,2,2,2")
-                ));
-            }
-
-            // Dew Heater Polyline (Pink / Coral Dotted - if dynamic)
-            if (heaterPoints.Count >= 2) {
-                svg.Add(new XElement(SvgNs + "polyline",
-                    new XAttribute("points", string.Join(" ", heaterPoints)),
-                    new XAttribute("fill", "none"),
-                    new XAttribute("stroke", "#EC4899"),
-                    new XAttribute("stroke-width", "2.0"),
-                    new XAttribute("stroke-dasharray", "3,3")
                 ));
             }
 
@@ -677,23 +679,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
             // Legend
             double legendY = height - 12;
             if (hasTemps) {
-                if (hasDynamicHeater) {
-                    AddLegendItem(svg, 10, legendY, "#F59E0B", "Ambient Temp (°C)");
-                    AddLegendItem(svg, 150, legendY, "#06B6D4", "Dew Point (°C)");
-                    AddLegendItem(svg, 275, legendY, "#818CF8", "Humidity (%)");
-                    if (hasPower) {
-                        AddLegendItem(svg, 395, legendY, "#FACC15", "Power (W)");
-                        AddLegendItem(svg, 495, legendY, "#EC4899", "Dew Heater (%)");
-                        AddLegendItem(svg, 640, legendY, "#EF4444", "Dew Risk (<2.5°C)");
-                    } else {
-                        AddLegendItem(svg, 400, legendY, "#EC4899", "Dew Heater (%)");
-                        AddLegendItem(svg, 560, legendY, "#EF4444", "Dew Risk (<2.5°C)");
-                    }
-                } else if (hasPower) {
+                if (hasPower) {
                     AddLegendItem(svg, 20, legendY, "#F59E0B", "Ambient Temp (°C)");
                     AddLegendItem(svg, 180, legendY, "#06B6D4", "Dew Point (°C)");
                     AddLegendItem(svg, 330, legendY, "#818CF8", "Humidity (%)");
-                    AddLegendItem(svg, 480, legendY, "#FACC15", "Power Draw (W)");
+                    AddLegendItem(svg, 480, legendY, "#FACC15", "Power (Watts)");
                     AddLegendItem(svg, 660, legendY, "#EF4444", "Dew Risk (<2.5°C)");
                 } else {
                     AddLegendItem(svg, 40, legendY, "#F59E0B", "Ambient Temp (°C) - Left Axis");
@@ -702,10 +692,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     AddLegendItem(svg, 670, legendY, "#EF4444", "Dew Risk Zone (<2.5°C)");
                 }
             } else if (hasPower) {
-                AddLegendItem(svg, 200, legendY, "#FACC15", "⚡ Instantaneous Power Draw (Watts)");
-                if (hasDynamicHeater) {
-                    AddLegendItem(svg, 480, legendY, "#EC4899", "Dew Heater Duty (%)");
-                }
+                AddLegendItem(svg, 200, legendY, "#FACC15", "⚡ Power Draw (Watts)");
             }
 
             return svg.ToString();

@@ -21,6 +21,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         private Timer? _pollingTimer;
         private ISwitchMediator? _switchMediator;
         private IWeatherDataMediator? _weatherMediator;
+        private ICameraMediator? _cameraMediator;
+        private IFocuserMediator? _focuserMediator;
         private volatile bool _isRunning;
         private int _isPolling = 0;
 
@@ -36,9 +38,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
         private static readonly Regex RegexTemperature = new Regex(@"\b(TEMP|TEMPERATURE)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex RegexHumidity = new Regex(@"\b(HUMIDITY|HUM)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        public void Start(ISwitchMediator? switchMediator, IWeatherDataMediator? weatherMediator, int intervalSeconds = 60) {
+        public void Start(
+            ISwitchMediator? switchMediator,
+            IWeatherDataMediator? weatherMediator,
+            ICameraMediator? cameraMediator = null,
+            IFocuserMediator? focuserMediator = null,
+            int intervalSeconds = 60) {
             _switchMediator = switchMediator;
             _weatherMediator = weatherMediator;
+            _cameraMediator = cameraMediator;
+            _focuserMediator = focuserMediator;
 
             lock (_lock) {
                 if (_isRunning && _pollingTimer != null) {
@@ -66,41 +75,11 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 };
 
                 bool hasAnyData = false;
+                double? switchTemp = null;
+                double? weatherTemp = null;
+                double? focuserTemp = null;
 
-                // 1. Poll Weather / Observing Conditions
-                try {
-                    var weatherInfo = _weatherMediator?.GetInfo();
-                    if (weatherInfo != null && weatherInfo.Connected) {
-                        if (!double.IsNaN(weatherInfo.Temperature) && weatherInfo.Temperature > -60 && weatherInfo.Temperature < 80) {
-                            sample.AmbientTemperature = weatherInfo.Temperature;
-                            hasAnyData = true;
-                        }
-
-                        if (!double.IsNaN(weatherInfo.Humidity) && weatherInfo.Humidity > 0 && weatherInfo.Humidity <= 100) {
-                            sample.Humidity = weatherInfo.Humidity;
-                            hasAnyData = true;
-                        }
-
-                        if (!double.IsNaN(weatherInfo.DewPoint) && weatherInfo.DewPoint > -60 && weatherInfo.DewPoint < 80) {
-                            sample.DewPoint = weatherInfo.DewPoint;
-                            hasAnyData = true;
-                        }
-
-                        if (!double.IsNaN(weatherInfo.SkyQuality) && weatherInfo.SkyQuality > 0) {
-                            sample.SkyQuality = weatherInfo.SkyQuality;
-                            hasAnyData = true;
-                        }
-
-                        if (!double.IsNaN(weatherInfo.CloudCover) && weatherInfo.CloudCover >= 0) {
-                            sample.CloudCover = weatherInfo.CloudCover;
-                            hasAnyData = true;
-                        }
-                    }
-                } catch (Exception ex) {
-                    Logger.Debug($"[OCD Telemetry] WeatherMediator query exception: {ex.Message}");
-                }
-
-                // 2. Poll ASCOM Switch / Powerbox
+                // 1. Poll ASCOM Switch / Powerbox (Primary Priority for Temperature)
                 try {
                     var switchInfo = _switchMediator?.GetInfo();
                     if (switchInfo != null && switchInfo.Connected) {
@@ -168,10 +147,10 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                                     : dutyPct;
                                 hasAnyData = true;
                             }
-                            // Check Switch Temperature
-                            else if (!sample.AmbientTemperature.HasValue && RegexTemperature.IsMatch(combined)) {
+                            // Check Switch Temperature (Highest Priority)
+                            else if (!switchTemp.HasValue && RegexTemperature.IsMatch(combined)) {
                                 if (val > -60 && val < 80) {
-                                    sample.AmbientTemperature = val;
+                                    switchTemp = val;
                                     hasAnyData = true;
                                 }
                             }
@@ -186,6 +165,74 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     }
                 } catch (Exception ex) {
                     Logger.Debug($"[OCD Telemetry] SwitchMediator query exception: {ex.Message}");
+                }
+
+                // 2. Poll Weather / Observing Conditions (Secondary Priority for Temperature)
+                try {
+                    var weatherInfo = _weatherMediator?.GetInfo();
+                    if (weatherInfo != null && weatherInfo.Connected) {
+                        if (!double.IsNaN(weatherInfo.Temperature) && weatherInfo.Temperature > -60 && weatherInfo.Temperature < 80) {
+                            weatherTemp = weatherInfo.Temperature;
+                            hasAnyData = true;
+                        }
+
+                        if (!sample.Humidity.HasValue && !double.IsNaN(weatherInfo.Humidity) && weatherInfo.Humidity > 0 && weatherInfo.Humidity <= 100) {
+                            sample.Humidity = weatherInfo.Humidity;
+                            hasAnyData = true;
+                        }
+
+                        if (!sample.DewPoint.HasValue && !double.IsNaN(weatherInfo.DewPoint) && weatherInfo.DewPoint > -60 && weatherInfo.DewPoint < 80) {
+                            sample.DewPoint = weatherInfo.DewPoint;
+                            hasAnyData = true;
+                        }
+
+                        if (!double.IsNaN(weatherInfo.SkyQuality) && weatherInfo.SkyQuality > 0) {
+                            sample.SkyQuality = weatherInfo.SkyQuality;
+                            hasAnyData = true;
+                        }
+
+                        if (!double.IsNaN(weatherInfo.CloudCover) && weatherInfo.CloudCover >= 0) {
+                            sample.CloudCover = weatherInfo.CloudCover;
+                            hasAnyData = true;
+                        }
+                    }
+                } catch (Exception ex) {
+                    Logger.Debug($"[OCD Telemetry] WeatherMediator query exception: {ex.Message}");
+                }
+
+                // 3. Poll Focuser Probe (Fallback Priority for Temperature)
+                try {
+                    var focuserInfo = _focuserMediator?.GetInfo();
+                    if (focuserInfo != null && focuserInfo.Connected) {
+                        if (!double.IsNaN(focuserInfo.Temperature) && focuserInfo.Temperature > -60 && focuserInfo.Temperature < 80) {
+                            focuserTemp = focuserInfo.Temperature;
+                            hasAnyData = true;
+                        }
+                    }
+                } catch (Exception ex) {
+                    Logger.Debug($"[OCD Telemetry] FocuserMediator query exception: {ex.Message}");
+                }
+
+                // Resolve Ambient Temperature by priority: Switch > Weather > Focuser
+                if (switchTemp.HasValue) {
+                    sample.AmbientTemperature = switchTemp.Value;
+                } else if (weatherTemp.HasValue) {
+                    sample.AmbientTemperature = weatherTemp.Value;
+                } else if (focuserTemp.HasValue) {
+                    sample.AmbientTemperature = focuserTemp.Value;
+                }
+
+                // 4. Poll Camera Cooler Telemetry
+                try {
+                    var cameraInfo = _cameraMediator?.GetInfo();
+                    if (cameraInfo != null && cameraInfo.Connected) {
+                        if (cameraInfo.CoolerOn) {
+                            sample.CoolerPower = Math.Clamp(cameraInfo.CoolerPower, 0.0, 100.0);
+                            hasAnyData = true;
+                        }
+                    }
+                } catch (Exception ex) {
+                    Logger.Debug($"[OCD Telemetry] CameraMediator query exception: {ex.Message}");
                 }
 
                 // 3. Fallbacks & Derived Metrics

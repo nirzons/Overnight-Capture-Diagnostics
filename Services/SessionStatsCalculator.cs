@@ -206,6 +206,17 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     session.DewHeaterAvg = validDewDuty.Average();
                     session.DewHeaterStatus = $"Active ({session.DewHeaterAvg.Value:F0}% avg)";
                 }
+
+                var validCoolerDuty = sortedSamples
+                    .Where(s => s.CoolerPower.HasValue && s.CoolerPower.Value >= 0)
+                    .Select(s => s.CoolerPower!.Value)
+                    .ToList();
+
+                if (validCoolerDuty.Any()) {
+                    session.CoolerPowerMin = validCoolerDuty.Min();
+                    session.CoolerPowerMax = validCoolerDuty.Max();
+                    session.CoolerPowerAvg = validCoolerDuty.Average();
+                }
             }
 
             // Calculate Environmental & Weather Summaries

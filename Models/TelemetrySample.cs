@@ -10,6 +10,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double? Humidity { get; set; }
         public double? DewPoint { get; set; }
         public double? DewHeaterDuty { get; set; }
+        public double? CoolerPower { get; set; }
         public double? SkyQuality { get; set; }
         public double? CloudCover { get; set; }
     }

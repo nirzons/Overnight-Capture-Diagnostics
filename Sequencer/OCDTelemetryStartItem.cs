@@ -27,6 +27,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
         [Import]
         public IWeatherDataMediator? WeatherDataMediator { get; set; }
 
+        [Import]
+        public ICameraMediator? CameraMediator { get; set; }
+
+        [Import]
+        public IFocuserMediator? FocuserMediator { get; set; }
+
         private int intervalSeconds = 60;
         [JsonProperty]
         public int IntervalSeconds {
@@ -93,7 +99,7 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
             progress.Report(new ApplicationStatus { Status = "OCD: Initializing Telemetry Monitor..." });
 
             // Start background monitor
-            TelemetryMonitorService.Instance.Start(SwitchMediator, WeatherDataMediator, IntervalSeconds);
+            TelemetryMonitorService.Instance.Start(SwitchMediator, WeatherDataMediator, CameraMediator, FocuserMediator, IntervalSeconds);
 
             // Register cancellation hook so if sequence is aborted, the background timer disarms
             token.Register(() => {
@@ -115,7 +121,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Sequencer {
                 IntervalSeconds = this.IntervalSeconds,
                 CurrentReadout = "--",
                 SwitchMediator = this.SwitchMediator,
-                WeatherDataMediator = this.WeatherDataMediator
+                WeatherDataMediator = this.WeatherDataMediator,
+                CameraMediator = this.CameraMediator,
+                FocuserMediator = this.FocuserMediator
             };
         }
 

@@ -144,8 +144,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 coolingMedian = (lightFrameTemps.Count % 2 == 0)
                     ? (lightFrameTemps[mid - 1] + lightFrameTemps[mid]) / 2.0
                     : lightFrameTemps[mid];
-            } else if (session.Equipment.CameraTempSetpoint != 0) {
-                coolingMedian = session.Equipment.CameraTempSetpoint;
+            } else if ((session.Equipment?.CameraTempSetpoint ?? 0) != 0) {
+                coolingMedian = session.Equipment!.CameraTempSetpoint;
             } else {
                 coolingMedian = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? 0;
             }
@@ -162,8 +162,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("        <tbody>");
                     sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
-                    if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
-                        sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{coolingMedian:F1}°C</strong></td></tr>");
+                    if (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0 || session.CoolerPowerAvg.HasValue) {
+                        string tempStr = (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0) ? $"{coolingMedian:F1}°C" : "N/A";
+                        string coolerDutyStr = session.CoolerPowerAvg.HasValue
+                            ? $" <span style=\"color: #94A3B8; font-size: 13px; font-weight: normal;\">(TEC Power: {session.CoolerPowerMin:F0}% &mdash; {session.CoolerPowerMax:F0}%, Mean: {session.CoolerPowerAvg:F0}%)</span>"
+                            : "";
+                        sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{tempStr}</strong>{coolerDutyStr}</td></tr>");
                     }
                     sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                     sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");
@@ -176,14 +180,18 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("      </table>");
                 }
             } else {
-                var eq = session.Equipment;
+                var eq = session.Equipment ?? new EquipmentDetails();
                 sb.AppendLine("      <table>");
                 sb.AppendLine("        <thead><tr><th>Category</th><th>Device / Property</th><th>Details</th></tr></thead>");
                 sb.AppendLine("        <tbody>");
                 sb.AppendLine($"          <tr><td><strong>Optics</strong></td><td>{eq.TelescopeName}</td><td>Focal Length: {eq.FocalLengthMm:F0} mm | Aperture: {eq.ApertureMm:F0} mm | f/{eq.FocalRatio:F1}</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Camera</strong></td><td>{eq.CameraName}</td><td>Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm</td></tr>");
-                if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
-                    sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{coolingMedian:F1}°C</strong></td></tr>");
+                if (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0 || session.CoolerPowerAvg.HasValue) {
+                    string tempStr = (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0) ? $"{coolingMedian:F1}°C" : "N/A";
+                    string coolerDutyStr = session.CoolerPowerAvg.HasValue
+                        ? $" <span style=\"color: #94A3B8; font-size: 13px; font-weight: normal;\">(TEC Power: {session.CoolerPowerMin:F0}% &mdash; {session.CoolerPowerMax:F0}%, Mean: {session.CoolerPowerAvg:F0}%)</span>"
+                        : "";
+                    sb.AppendLine($"          <tr><td><strong>Cooling</strong></td><td>Median Temp</td><td><strong style=\"color: #38BDF8;\">{tempStr}</strong>{coolerDutyStr}</td></tr>");
                 }
                 sb.AppendLine($"          <tr><td><strong>Pixel Scale</strong></td><td><strong style=\"color: #60A5FA;\">{eq.PixelScaleArcsec:F2} arcsec/px</strong></td><td>Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}'</td></tr>");
                 sb.AppendLine($"          <tr><td><strong>Mount & Guider</strong></td><td>{eq.MountName}</td><td>Guider: {eq.GuiderName}</td></tr>");

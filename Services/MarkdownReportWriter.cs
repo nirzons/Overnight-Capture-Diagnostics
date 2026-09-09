@@ -68,8 +68,8 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                 coolingMedian = (lightFrameTemps.Count % 2 == 0)
                     ? (lightFrameTemps[mid - 1] + lightFrameTemps[mid]) / 2.0
                     : lightFrameTemps[mid];
-            } else if (session.Equipment.CameraTempSetpoint != 0) {
-                coolingMedian = session.Equipment.CameraTempSetpoint;
+            } else if ((session.Equipment?.CameraTempSetpoint ?? 0) != 0) {
+                coolingMedian = session.Equipment!.CameraTempSetpoint;
             } else {
                 coolingMedian = session.Targets.FirstOrDefault(t => t.SensorTempMedian.HasValue)?.SensorTempMedian ?? 0;
             }
@@ -82,8 +82,12 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine("| Category | Device / Property | Details |");
                     sb.AppendLine("| :--- | :--- | :--- |");
                     sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
-                    if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
-                        sb.AppendLine($"| **Cooling** | Median Temp | **{coolingMedian:F1}°C** |");
+                    if (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0 || session.CoolerPowerAvg.HasValue) {
+                        string tempStr = (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0) ? $"**{coolingMedian:F1}°C**" : "N/A";
+                        string coolerDutyStr = session.CoolerPowerAvg.HasValue
+                            ? $" (TEC Power: {session.CoolerPowerMin:F0}% — {session.CoolerPowerMax:F0}%, Mean: {session.CoolerPowerAvg:F0}%)"
+                            : "";
+                        sb.AppendLine($"| **Cooling** | Median Temp | {tempStr}{coolerDutyStr} |");
                     }
                     sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                     sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");
@@ -93,12 +97,16 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Services {
                     sb.AppendLine();
                 }
             } else {
-                var eq = session.Equipment;
+                var eq = session.Equipment ?? new EquipmentDetails();
                 sb.AppendLine("| Category | Device / Property | Details |");
                 sb.AppendLine("| :--- | :--- | :--- |");
                 sb.AppendLine($"| **Camera** | {eq.CameraName} | Resolution: {eq.CameraWidth} x {eq.CameraHeight} | Pixel Size: {eq.PixelSizeMicrons:F2} µm |");
-                if (coolingMedian != 0 || session.Equipment.CameraTempSetpoint != 0) {
-                    sb.AppendLine($"| **Cooling** | Median Temp | **{coolingMedian:F1}°C** |");
+                if (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0 || session.CoolerPowerAvg.HasValue) {
+                    string tempStr = (coolingMedian != 0 || (session.Equipment?.CameraTempSetpoint ?? 0) != 0) ? $"**{coolingMedian:F1}°C**" : "N/A";
+                    string coolerDutyStr = session.CoolerPowerAvg.HasValue
+                        ? $" (TEC Power: {session.CoolerPowerMin:F0}% — {session.CoolerPowerMax:F0}%, Mean: {session.CoolerPowerAvg:F0}%)"
+                        : "";
+                    sb.AppendLine($"| **Cooling** | Median Temp | {tempStr}{coolerDutyStr} |");
                 }
                 sb.AppendLine($"| **Optics** | {eq.TelescopeName} | Focal Length: {eq.FocalLengthMm:F0} mm, Aperture: {eq.ApertureMm:F0} mm (f/{eq.FocalRatio:F1}) |");
                 sb.AppendLine($"| **Pixel Scale** | **{eq.PixelScaleArcsec:F2} arcsec/px** | Field of View: {eq.FovWidthArcmin:F2}' x {eq.FovHeightArcmin:F2}' |");

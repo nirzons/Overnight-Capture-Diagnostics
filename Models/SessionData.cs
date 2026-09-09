@@ -115,6 +115,9 @@ namespace NirZonshine.NINA.OvernightCaptureDiagnostics.Models {
         public double? DewHeaterMin { get; set; }
         public double? DewHeaterMax { get; set; }
         public double? DewHeaterAvg { get; set; }
+        public double? CoolerPowerMin { get; set; }
+        public double? CoolerPowerMax { get; set; }
+        public double? CoolerPowerAvg { get; set; }
 
         public List<string> FiltersUsed => Targets
             .SelectMany(t => t.Frames.Where(f => !f.IsCalibrationFrame).Select(f => f.Filter))
